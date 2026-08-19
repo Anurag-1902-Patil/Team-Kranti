@@ -1,2 +1,2 @@
-# Team-Kranti
-SIH 26'
+# This is the official repository of Team Kranti for SIH 2026
+
