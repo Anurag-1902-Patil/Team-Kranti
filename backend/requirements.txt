@@ -1,0 +1,84 @@
+# ===================================================================
+# SIH26122 — Team Kranti Backend Requirements
+# ===================================================================
+
+# --- Core Framework ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-multipart==0.0.12
+
+# --- Database ---
+sqlalchemy==2.0.36
+asyncpg==0.30.0          # async postgres driver
+alembic==1.14.0
+psycopg2-binary==2.9.10  # sync driver for Alembic CLI
+
+# --- Queue / Background ---
+celery==5.4.0
+redis==5.2.0
+
+# --- Object Storage ---
+boto3==1.35.71            # S3-compatible (MinIO)
+minio==7.2.11
+
+# --- WhatsApp / HTTP ---
+httpx==0.27.2
+aiohttp==3.11.7
+
+# --- ASR ---
+faster-whisper==1.1.0
+
+# --- OCR ---
+# Tesseract: typed/printed text (typed DPRs, rendered spreadsheet images)
+# PP-OCRv5 via PaddleOCR: handwritten site diary photos (CPU-only, 0.07B params)
+# These are deliberately two different engines for two different accuracy profiles.
+pytesseract>=0.3.13
+paddlepaddle==2.6.2
+paddleocr==2.8.1
+pdfplumber==0.11.4
+pypdf==5.1.0
+Pillow==11.0.0
+pdf2image==1.17.0        # for rasterizing scanned PDFs
+
+# --- Spreadsheets ---
+pandas==2.2.3
+openpyxl==3.1.5
+
+# --- LLM ---
+groq==0.12.0              # Groq API client
+ollama==0.4.1             # Ollama Python client
+
+# --- Matching ---
+rapidfuzz==3.10.1
+sentence-transformers==3.3.1
+numpy==1.26.4
+
+# --- Vector DB ---
+qdrant-client>=1.9.0      # replaces ChromaDB; use QdrantClient(':memory:') in tests
+
+# --- Schedule / XER ---
+PyP6Xer==1.1.0
+
+# --- Data Export ---
+pyarrow==18.0.0           # Parquet
+fastparquet==2024.11.0
+
+# --- Security ---
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# --- Utilities ---
+python-dotenv==1.0.1
+structlog==24.4.0
+tenacity==9.0.0           # retries with exponential backoff
+python-dateutil==2.9.0
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
+httpx==0.27.2            # async test client
+factory-boy==3.3.1
+aiosqlite==0.20.0         # SQLite async driver for in-memory test DB

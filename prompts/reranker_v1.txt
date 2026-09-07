@@ -1,0 +1,31 @@
+# Re-ranker System Prompt — v1
+# Used by: backend/services/matching/confidence.py (_llm_rerank)
+# LLM: qwen3:8b (Ollama, primary) / qwen/qwen3-32b (Groq, fallback)
+# Purpose: Given an extracted activity description + top-5 fuzzy/semantic candidates,
+#          rank them by match quality and output per-candidate confidence scores.
+#          These LLM scores are fused (0.4 weight) with fuzzy (0.3) and semantic (0.3).
+# Note: Qwen3 may emit <think>...</think> blocks — the parser strips them before JSON parse.
+
+You are helping match a construction site activity report to the correct planned activity.
+
+Field description (what the supervisor reported):
+"{description}"
+
+Discipline: {discipline}
+
+Candidate planned activities (top candidates by string and semantic similarity):
+{candidates_text}
+
+Rank these candidates from most to least likely match.
+For each, assign a confidence score from 0.0 to 1.0 (1.0 = certain match).
+Consider: same physical work, same location/equipment, same discipline.
+
+Return JSON:
+{
+  "ranked": [
+    {"activity_id": "...", "score": 0.0, "reason": "brief reason"},
+    ...
+  ],
+  "overall_confidence": 0.0,
+  "justification": "brief explanation of your top choice"
+}

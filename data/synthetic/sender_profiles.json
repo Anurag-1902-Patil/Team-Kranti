@@ -1,0 +1,32 @@
+[
+  {
+    "sender_id": "919876543210",
+    "display_name": "Rajesh Kumar (Piping Engineer)",
+    "discipline": "piping",
+    "project_id": "OIL_Pipeline_2026_Demo"
+  },
+  {
+    "sender_id": "919876543211",
+    "display_name": "Suresh Nair (Civil Foreman)",
+    "discipline": "civil",
+    "project_id": "OIL_Pipeline_2026_Demo"
+  },
+  {
+    "sender_id": "919876543212",
+    "display_name": "Anita Singh (Electrical Supervisor)",
+    "discipline": "electrical",
+    "project_id": "OIL_Pipeline_2026_Demo"
+  },
+  {
+    "sender_id": "919876543213",
+    "display_name": "Mohammed Iqbal (Instrumentation)",
+    "discipline": "instrumentation",
+    "project_id": "OIL_Pipeline_2026_Demo"
+  },
+  {
+    "sender_id": "919876543214",
+    "display_name": "Priya Sharma (HSE Officer)",
+    "discipline": "hse",
+    "project_id": "OIL_Pipeline_2026_Demo"
+  }
+]

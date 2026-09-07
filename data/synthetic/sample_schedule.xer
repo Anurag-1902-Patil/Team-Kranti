@@ -1,0 +1,29 @@
+ERMHDR	22.12	2026-09-01	Project	admin	admin				Chinese
+%T	OBSMEMO
+%F	obsmemo_id	memo_type	object_type	object_id	memo_text	update_date
+%T	PROJECT
+%F	proj_id	proj_short_name	proj_name	create_date	plan_start_date
+%R	1	SIH2026	OIL India Pipeline Demo 2026	2026-08-01 00:00	2026-08-01 00:00
+%T	TASK
+%F	task_id	proj_id	task_code	task_name	target_start_date	target_end_date	target_drtn_hr_cnt	phys_complete_pct
+%R	101	1	PIP-001	Fabricate spool SP-247 (Line 24"-XX, N12->N15)	2026-08-01 08:00	2026-08-04 17:00	24	0
+%R	102	1	PIP-002	Erect Line 24"-XX at chainage 12+450	2026-08-04 08:00	2026-08-09 17:00	40	0
+%R	103	1	PIP-003	Hydrotest Line 24"-XX (N12 to N20)	2026-08-10 08:00	2026-08-11 17:00	8	0
+%R	104	1	PIP-004	Weld joint at flange node N12	2026-08-03 08:00	2026-08-04 17:00	8	0
+%R	201	1	CIV-001	Excavate foundation pit for Pump P-101 (Area A, Grid 12-13)	2026-08-01 08:00	2026-08-03 17:00	16	0
+%R	202	1	CIV-002	Pour concrete foundation for Pump P-101	2026-08-04 08:00	2026-08-06 17:00	16	0
+%R	203	1	CIV-003	Backfill and compact around Pump P-101 foundation	2026-08-11 08:00	2026-08-12 17:00	8	0
+%R	204	1	CIV-004	Construct access road to Process Area B	2026-08-01 08:00	2026-08-06 17:00	40	0
+%R	301	1	ELE-001	Pull 3Cx150mm2 cable from MCC-1 to Pump P-101 (Route R-12)	2026-08-08 08:00	2026-08-10 17:00	16	0
+%R	302	1	ELE-002	Terminate cables at MCC-1 and Motor terminal box	2026-08-11 08:00	2026-08-12 17:00	8	0
+%R	303	1	ELE-003	Install conduit from MCC-1 along Route R-12	2026-08-06 08:00	2026-08-08 17:00	16	0
+%R	401	1	INS-001	Calibrate flow transmitter FT-501 (Line 12"-YY)	2026-08-12 08:00	2026-08-12 12:00	4	0
+%R	402	1	INS-002	Install pressure gauge at pump P-101 discharge	2026-08-09 08:00	2026-08-09 12:00	4	0
+%R	501	1	HSE-001	Conduct weekly HSE audit for piping work in Process Area B	2026-08-08 08:00	2026-08-08 12:00	4	0
+%R	502	1	HSE-002	Toolbox talk for hot work permit compliance	2026-08-01 07:00	2026-08-01 09:00	2	0
+%R	601	1	MEC-001	Set and level pump P-101 on foundation (Area A)	2026-08-07 08:00	2026-08-08 17:00	8	0
+%R	602	1	MEC-002	Alignment check for pump P-101 motor coupling	2026-08-09 08:00	2026-08-09 12:00	4	0
+%R	701	1	STR-001	Erect structural steel framework for pipe support rack	2026-08-01 08:00	2026-08-05 17:00	32	0
+%R	702	1	STR-002	Paint structural steel anti-corrosion coating	2026-08-06 08:00	2026-08-07 17:00	8	0
+%R	801	1	MIL-001	Mechanical Completion of Pump P-101 package	2026-08-14 00:00	2026-08-14 00:00	0	0
+%E

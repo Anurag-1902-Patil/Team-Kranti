@@ -1,0 +1,163 @@
+services:
+  # =========================================================================
+  # PostgreSQL 16
+  # =========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: sih26122-postgres
+    environment:
+      POSTGRES_USER: kranti
+      POSTGRES_PASSWORD: kranti_secret
+      POSTGRES_DB: sih26122
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U kranti -d sih26122" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # =========================================================================
+  # Redis 7
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: sih26122-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # =========================================================================
+  # MinIO — S3-compatible object storage
+  # =========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: sih26122-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001" # MinIO Console UI
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # Qdrant — Vector DB (replaces ChromaDB; ADR-011)
+  # Two collections: progress_events (institutional memory) and
+  # plan_activities (matching engine index) — see ADR-012 for why they're separate.
+  # =========================================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: sih26122-qdrant
+    ports:
+      - "6333:6333" # gRPC + REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "bash -c '</dev/tcp/localhost/6333'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =========================================================================
+  # FastAPI Backend
+  # =========================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: sih26122-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://kranti:kranti_secret@postgres:5432/sih26122
+      - DATABASE_URL_SYNC=postgresql+psycopg2://kranti:kranti_secret@postgres:5432/sih26122
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - QDRANT_URL=http://qdrant:6333
+      - APP_ENV=development
+      - LOG_LEVEL=INFO
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # =========================================================================
+  # Celery Worker
+  # =========================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: sih26122-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://kranti:kranti_secret@postgres:5432/sih26122
+      - DATABASE_URL_SYNC=postgresql+psycopg2://kranti:kranti_secret@postgres:5432/sih26122
+      - REDIS_URL=redis://redis:6379/0
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_SECURE=false
+      - QDRANT_URL=http://qdrant:6333
+      - APP_ENV=development
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command: celery -A backend.workers.celery_app worker --loglevel=info --concurrency=2
+
+  # =========================================================================
+  # Next.js Frontend
+  # =========================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sih26122-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  minio_data:
+  qdrant_data:

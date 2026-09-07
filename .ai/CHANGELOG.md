@@ -1,0 +1,122 @@
+# CHANGELOG.md — AI-driven changes
+
+All meaningful code changes made by AI (Antigravity) are logged here.
+
+---
+
+## 2026-09-05 — Initial Full Build (Session 2)
+
+**Session summary**: Completed the full implementation of all 14 layers.
+
+### Layer 0 (Foundation)
+- Created `backend/requirements.txt` with full dependency stack
+- Created `.env.example` with all required env var templates
+- Created `backend/logging_config.py` — structured JSON logging with structlog
+- Created `backend/core/config.py` — Pydantic BaseSettings with all app config
+
+### Layer 1 (Database)
+- Created `backend/db/models.py` — 7 SQLAlchemy ORM tables with all relationships, indexes, FK constraints, JSONB fields
+- Created `backend/db/session.py` — async session factory, FastAPI get_db dependency
+- Created `backend/alembic/env.py` — reads DATABASE_URL_SYNC, imports Base for autogenerate
+- Created `backend/alembic/versions/001_initial_schema.py` — initial migration (all tables + enums)
+
+### Layer 2 (Ingestion)
+- Created `backend/security/hmac.py` — constant-time HMAC-SHA256 verification
+- Created `backend/services/ingestion/whatsapp.py` — typed WAMessage Pydantic models for all message types
+- Created `backend/services/ingestion/media.py` — download from Meta CDN, upload to MinIO
+- Created `backend/api/v1/webhook.py` — HMAC verify, idempotency, immediate 200, fire-and-forget Celery
+- Created `backend/workers/celery_app.py` — Redis broker, late ACK, time limits, prefetch=1
+
+### Layer 3 (Extraction)
+- Created `backend/services/extraction/asr.py` — faster-whisper singleton, VAD filter, temp file management
+- Created `backend/services/extraction/ocr.py` — PaddleOCR (printed) + Groq vision (handwritten) + pdfplumber + pandas
+- Created `backend/services/extraction/llm_extractor.py` — few-shot system prompt, Groq primary + Ollama fallback, tenacity retry, JSON parse
+- Created `backend/services/extraction/normalizer.py` — enum aliases, dateutil parsing, IST timezone assumption, audit enrichment
+
+### Layer 4 (Matching)
+- Created `backend/services/matching/fuzzy_matcher.py` — RapidFuzz token_sort + partial_ratio, 0.6/0.4 weighting
+- Created `backend/services/matching/semantic_matcher.py` — all-MiniLM-L6-v2, numpy embedding matrix, cosine dot product
+- Created `backend/services/matching/confidence.py` — merge, LLM re-rank, 0.3/0.3/0.4 fusion, threshold routing (0.85/0.55)
+
+### Layer 5 (Scheduling)
+- Created `backend/services/scheduling/xer_parser.py` — PyP6XER wrapper with discipline keyword inference
+- Created `backend/services/scheduling/xer_writer.py` — applies only actual_start/finish/pct, preserves all P6 structure
+- Created `backend/services/scheduling/schedule_service.py` — async write-back, confirm_new with immediate embedding
+
+### Layer 6 (Institutional Memory)
+- Created `backend/services/institutional_memory/chroma_store.py` — persistent ChromaDB, progress_events + plan_activities collections
+- Created `backend/services/institutional_memory/exporter.py` — Postgres → Parquet + CSV + SCHEMA.md + summary_stats.json
+
+### Layer 7 (Pipeline + API)
+- Created `backend/workers/tasks.py` — full 10-step Celery task: idempotency → media → ASR/OCR → LLM extract → normalize → fuzzy → semantic → LLM rerank → store → ChromaDB index
+- Created `backend/api/v1/events.py` — list/detail with match candidates hydration
+- Created `backend/api/v1/review.py` — 4 actions (accept/edit/decline/confirm_new) + queue endpoint
+- Created `backend/api/v1/schedule.py` — activities list, new activity creation, XER export
+- Created `backend/api/v1/memory.py` — semantic query, ZIP export, stats
+
+### Layer 8 (Schemas + Deps)
+- Created `backend/schemas/event.py`, `review.py`, `schedule.py`
+- Created `backend/api/deps.py` — Bearer token auth, get_db re-export
+
+### Layer 9–10 (Data + Scripts)
+- Created `data/SCHEMA.md` — 19-column data dictionary with analysis guidance
+- Created `data/synthetic/sender_profiles.json` — 5 sender profiles
+- Created `data/synthetic/whatsapp_messages.json` — 5 synthetic webhook payloads (3 formats)
+- Created `scripts/seed_schedule.py` — XER load → DB, embedding index, ChromaDB, sender profiles
+- Created `scripts/run_demo.py` — 3-format end-to-end demo with pipeline trace
+
+### Layer 11 (Tests)
+- Created `tests/conftest.py` — SQLite in-memory, fixtures
+- Created `tests/test_extraction_normalizer.py` — 8 normalizer tests + 3 extractor tests
+- Created `tests/test_matching.py` — 9 matching tests (fuzzy/semantic/routing)
+- Created `tests/test_webhook_security.py` — 6 HMAC tests + 4 webhook endpoint tests
+
+### Layer 12 (Docker)
+- Created `docker-compose.yml` — Postgres + Redis + MinIO + backend + worker + frontend
+- Created `Dockerfile.backend`, `Dockerfile.worker`
+
+### Layer 13 (Frontend)
+- Initialized Next.js 15 app with TypeScript + Tailwind
+- Created 5 pages: Dashboard, Events, Review Queue, Schedule, Memory
+- Created `Sidebar`, `ConfidenceBadge`, `DisciplineChip`, `ConfidenceBar` components
+- Created `lib/api.ts`, `lib/types.ts`
+
+### Layer 14 (Memory docs)
+- Created/updated: `REPO_MAP.md`, `DATA_MODEL.md`, `CURRENT_STATE.md`, `CHANGELOG.md`
+
+---
+
+## 2026-09-05 — Final Change Request (Session 3)
+
+**Session summary**: Applied final stack migration and all functional gap closures. All 34 tests now pass.
+
+### Stack changes
+- **OCR stack** (`backend/services/extraction/ocr.py`): Replaced single PaddleOCR engine with two deliberate engines — Tesseract (`pytesseract`) for typed/printed content, PP-OCRv5 (via PaddleOCR, CPU-only) for handwritten site diary photos. Documented in ARCHITECTURE.md with explicit table.
+- **LLM flip** (`backend/services/extraction/llm_extractor.py`, `backend/services/matching/confidence.py`): Local Qwen3-8B via Ollama is now PRIMARY; Groq `qwen/qwen3-32b` is FALLBACK for both extraction and re-ranking. Qwen3 `<think>` block stripping added to both parsers.
+- **Config rename**: `GROQ_MODEL_RERANK` → `GROQ_MODEL_FALLBACK` everywhere (config.py, .env.example, both call sites) — name reflects its dual-use role.
+- **Qdrant** (`backend/services/institutional_memory/qdrant_store.py`): New file replacing ChromaDB. Two separate collections — `plan_activities` (matching index) and `progress_events` (institutional memory) — with ADR-012 explaining why they must stay separate.
+- **Qdrant in compose**: `docker-compose.yml` updated with `qdrant` service, healthcheck, persistent volume, `QDRANT_URL` env injected into backend + worker.
+- **Dockerfiles**: Tesseract (`tesseract-ocr`, `tesseract-ocr-eng`) added to both `Dockerfile.backend` and `Dockerfile.worker`.
+
+### Functional gaps closed
+- **A6 (Named reviewer identity)**: Added `POST /auth/login`, `POST /auth/logout` (`backend/api/v1/auth.py`). Frontend: new `/login` page (`frontend/app/login/page.tsx`), `Sidebar.tsx` updated to show reviewer name + sign-out button, `lib/api.ts` reads named token from localStorage with 401 auto-redirect.
+- **A7 (Re-ranker fallback test)**: Added `TestRerankerFallback` class with 2 tests to `tests/test_matching.py`. Added `_call_local_llm` helper to `confidence.py` for testability.
+- **A8 (Versioned prompt templates)**: Created `prompts/extractor_v1.txt` and `prompts/reranker_v1.txt` with headers documenting model, version, fusion weights, and Qwen3 handling notes.
+
+### Config / infra
+- `.env.example` fully updated: old Groq/Chroma/llama vars replaced with Qwen3/Qdrant/groq_fallback vars.
+- `tests/conftest.py`: replaced stale `CHROMA_PERSIST_DIR` with `QDRANT_URL=:memory:`, `LOCAL_LLM_MODEL`, `GROQ_MODEL_FALLBACK`.
+
+### Test fixes
+- `test_normalize_percent_clamped_over_100`: uses `model_construct()` to bypass Pydantic `le=100` at construction — tests normalizer clamping, not schema validation.
+- `test_groq_failure_triggers_ollama_fallback` → renamed `test_local_llm_failure_triggers_groq_fallback`, updated to patch `_call_local_llm`/`_call_groq_fallback` and new setting names.
+- Reranker fallback tests: patches `_call_local_llm` directly (not raw `ollama.generate`) + uses `mocker.patch.object` for individual settings attributes (not whole object) to avoid MagicMock on float thresholds.
+- Webhook "200-first" test: now sends valid HMAC signature + mocks `process_whatsapp_message.delay` (no live Redis needed in test env).
+
+### Docs
+- `ARCHITECTURE.md`: full rewrite with two-engine OCR table, two-collection Qdrant table, updated pipeline diagram and tech stack.
+- `DECISIONS.md`: ADR-003, ADR-004, ADR-009 revised; ADR-011 (Qdrant replaces ChromaDB) and ADR-012 (two separate collections, rationale) added as required by user.
+- `CURRENT_STATE.md`: all 15 layers marked done, final confirmed tech stack table, all A1-A8 gaps closed.
+- Added `scripts/smoke_test_qwen3_extraction.py` — validates Qwen3-8B JSON output against Pydantic schemas on 5 synthetic message types before full demo run.
+
+### Final test result: **34/34 passed** ✅

@@ -1,0 +1,197 @@
+[
+  {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "DEMO_BUSINESS_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "918000000001",
+                "phone_number_id": "DEMO_PHONE_ID"
+              },
+              "contacts": [
+                {
+                  "profile": {"name": "Rajesh Kumar"},
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "DEMO_MSG_001",
+                  "timestamp": "1756281600",
+                  "type": "text",
+                  "text": {
+                    "body": "Spool erection for Line 24\"-XX started today at chainage 12+450, 09:30 AM. Team of 8 welders deployed. Expected 3 days."
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ],
+    "_demo_note": "Format 1: Free-text WhatsApp message from piping engineer"
+  },
+  {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "DEMO_BUSINESS_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "918000000001",
+                "phone_number_id": "DEMO_PHONE_ID"
+              },
+              "contacts": [
+                {
+                  "profile": {"name": "Suresh Nair"},
+                  "wa_id": "919876543211"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543211",
+                  "id": "DEMO_MSG_002",
+                  "timestamp": "1756368000",
+                  "type": "text",
+                  "text": {
+                    "body": "Foundation excavation for pump P-101 completed yesterday. Area A, Grid 12-13. Work done 100%. Concrete pour scheduled tomorrow."
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ],
+    "_demo_note": "Format 1: Free-text civil update"
+  },
+  {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "DEMO_BUSINESS_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "918000000001",
+                "phone_number_id": "DEMO_PHONE_ID"
+              },
+              "contacts": [
+                {
+                  "profile": {"name": "Anita Singh"},
+                  "wa_id": "919876543212"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543212",
+                  "id": "DEMO_MSG_003",
+                  "timestamp": "1756454400",
+                  "type": "text",
+                  "text": {
+                    "body": "Cable pulling from MCC-1 to pump P-101 started. Route R-12. 3Cx150mm2 cable. 40% done as of today evening."
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ],
+    "_demo_note": "Format 1: Electrical partial_complete update"
+  },
+  {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "DEMO_BUSINESS_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "918000000001",
+                "phone_number_id": "DEMO_PHONE_ID"
+              },
+              "contacts": [
+                {
+                  "profile": {"name": "Rajesh Kumar"},
+                  "wa_id": "919876543210"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543210",
+                  "id": "DEMO_MSG_004",
+                  "timestamp": "1756540800",
+                  "type": "document",
+                  "document": {
+                    "id": "DEMO_DOC_MEDIA_ID",
+                    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "filename": "DPR_Piping_2026-08-29.xlsx",
+                    "caption": "Piping DPR for 29th August"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ],
+    "_demo_note": "Format 2: Spreadsheet upload (XLSX Daily Progress Report)"
+  },
+  {
+    "object": "whatsapp_business_account",
+    "entry": [
+      {
+        "id": "DEMO_BUSINESS_ID",
+        "changes": [
+          {
+            "value": {
+              "messaging_product": "whatsapp",
+              "metadata": {
+                "display_phone_number": "918000000001",
+                "phone_number_id": "DEMO_PHONE_ID"
+              },
+              "contacts": [
+                {
+                  "profile": {"name": "Suresh Nair"},
+                  "wa_id": "919876543211"
+                }
+              ],
+              "messages": [
+                {
+                  "from": "919876543211",
+                  "id": "DEMO_MSG_005",
+                  "timestamp": "1756627200",
+                  "type": "image",
+                  "image": {
+                    "id": "DEMO_IMAGE_MEDIA_ID",
+                    "mime_type": "image/jpeg",
+                    "caption": "Site diary for civil work 30 Aug"
+                  }
+                }
+              ]
+            },
+            "field": "messages"
+          }
+        ]
+      }
+    ],
+    "_demo_note": "Format 3: Scanned/handwritten site diary image"
+  }
+]
