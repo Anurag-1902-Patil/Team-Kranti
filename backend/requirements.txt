@@ -47,8 +47,7 @@ pandas==2.2.3
 openpyxl==3.1.5
 
 # --- LLM ---
-groq==0.12.0              # Groq API client
-ollama==0.4.1             # Ollama Python client
+openai>=1.40.0            # OpenAI-compatible client for NVIDIA NIM (nemotron-3-super-120b-a12b)
 
 # --- Matching ---
 rapidfuzz==3.10.1

@@ -64,18 +64,23 @@ def load_xer(
     Returns:
         List of dicts with keys matching PlanActivity columns.
     """
-    from PyP6Xer.reader import Reader
-
     path = Path(xer_path)
     if not path.exists():
         raise FileNotFoundError(f"XER file not found: {path}")
 
     log.info("xer_parser.loading", path=str(path))
 
+    # Try PyP6Xer if available; fallback to native TSV parser
     try:
+        from PyP6Xer.reader import Reader
         reader = Reader(str(path))
+        use_native = False
     except Exception as exc:
-        raise ValueError(f"Failed to parse XER file: {exc}") from exc
+        log.info("xer_parser.using_native_parser", reason=str(exc))
+        use_native = True
+
+    if use_native:
+        return _parse_xer_native(path, project_id)
 
     activities = []
 
@@ -129,3 +134,63 @@ def load_xer(
         activity_count=len(activities),
     )
     return activities
+
+
+def _parse_xer_native(path: Path, project_id: str) -> list[dict[str, Any]]:
+    """
+    Native Primavera P6 .XER parser.
+    Parses tab-separated tables (%T, %F, %R) without external library dependencies.
+    """
+    activities = []
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    current_table = None
+    fields: list[str] = []
+
+    for line in lines:
+        line = line.strip("\r\n")
+        if not line:
+            continue
+        parts = line.split("\t")
+        tag = parts[0]
+
+        if tag == "%T":
+            current_table = parts[1] if len(parts) > 1 else None
+            fields = []
+        elif tag == "%F":
+            fields = parts[1:]
+        elif tag == "%R" and current_table == "TASK":
+            row_vals = parts[1:]
+            row_dict = {f: v for f, v in zip(fields, row_vals)}
+
+            task_code = row_dict.get("task_code") or str(uuid.uuid4())
+            task_name = row_dict.get("task_name") or ""
+            wbs_code = row_dict.get("wbs_id") or row_dict.get("wbs_code")
+            planned_start = _parse_p6_datetime(row_dict.get("target_start_date"))
+            planned_finish = _parse_p6_datetime(row_dict.get("target_end_date"))
+            orig_duration = row_dict.get("target_drtn_hr_cnt")
+            duration_days = float(orig_duration) / 8.0 if orig_duration else None
+            pct_complete = float(row_dict.get("phys_complete_pct") or 0.0)
+            discipline = _infer_discipline(task_name)
+
+            activities.append(
+                {
+                    "activity_id": str(task_code),
+                    "activity_name": str(task_name),
+                    "wbs_code": str(wbs_code) if wbs_code else None,
+                    "discipline": discipline,
+                    "planned_start": planned_start,
+                    "planned_finish": planned_finish,
+                    "original_duration_days": duration_days,
+                    "percent_complete_plan": pct_complete,
+                    "project_id": project_id,
+                    "is_field_confirmed": False,
+                }
+            )
+
+    log.info(
+        "xer_parser.native_done",
+        path=str(path),
+        activity_count=len(activities),
+    )
+    return activities
+

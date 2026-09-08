@@ -1,11 +1,10 @@
 """
 LLM-based activity extraction service.
 
-Primary: Local Ollama (qwen3:8b) — self-hosted, runs on single consumer GPU (~8-10GB VRAM at Q4).
-Fallback: Groq API (qwen/qwen3-32b) — cloud reliability fallback for live-demo safety.
-
-Model names are config-driven (LOCAL_LLM_MODEL, GROQ_MODEL_FALLBACK) — no code change
-needed to swap models, just update .env.
+Primary (and sole) backend: NVIDIA NIM API (nvidia/nemotron-3-super-120b-a12b).
+Served via an OpenAI-compatible endpoint — no local GPU required.
+Model name and base URL are config-driven (NVIDIA_NIM_MODEL, NVIDIA_NIM_BASE_URL)
+so swapping models only requires a .env change.
 
 The LLM receives raw text (from WhatsApp/OCR/ASR) and extracts structured
 activity events per the §3.4 schema. Uses few-shot examples embedded in the
@@ -113,7 +112,7 @@ EXAMPLE OUTPUT:
 }}
 
 Return ONLY valid JSON. No explanations outside the JSON structure.
-Important: Qwen3 thinking mode may produce <think>...</think> blocks — output ONLY the JSON after thinking."""
+Note: Nemotron may emit <think>...</think> reasoning blocks — output ONLY the JSON after thinking."""
 
 
 def _build_prompt(text: str, discipline_hint: str | None) -> str:
@@ -128,12 +127,12 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
 
     Handles:
     - Markdown code fences (```json ... ```)
-    - Qwen3 <think>...</think> reasoning blocks (stripped before parse)
+    - Nemotron <think>...</think> reasoning blocks (stripped before parse)
     - Bare JSON without wrapper
     """
     text = raw_response.strip()
 
-    # Strip Qwen3 thinking blocks if present
+    # Strip Nemotron thinking blocks if present
     if "<think>" in text:
         # Find the last </think> and take everything after
         end_think = text.rfind("</think>")
@@ -160,8 +159,8 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
     activities = []
     for item in activities_raw:
         try:
-            # Qwen may return "activity" instead of the required
-            # "activity_description". Normalize before validation.
+            # Model-compatibility normalisation: some models return "activity"
+            # instead of "activity_description". Normalize before validation.
             if "activity" in item and "activity_description" not in item:
                 item["activity_description"] = item.pop("activity")
 
@@ -178,47 +177,32 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True,
 )
-def _call_local_llm(system_prompt: str, user_text: str) -> str:
+def _call_nvidia_nim(system_prompt: str, user_text: str) -> str:
     """
-    Call local Ollama (Qwen3-8B) as the PRIMARY extractor.
-    Model name from config: settings.local_llm_model
+    Call NVIDIA NIM (nemotron-3-super-120b-a12b) via OpenAI-compatible API.
+    Model name and base URL from config: settings.nvidia_nim_model / settings.nvidia_nim_base_url
+    Reasoning is disabled (enable_thinking=False) for structured JSON extraction
+    to avoid needing to strip large reasoning traces in latency-sensitive paths.
     """
-    import ollama
+    from openai import OpenAI
 
-    full_prompt = f"{system_prompt}\n\nUser message:\n{user_text}"
-    response = ollama.generate(
-        model=settings.local_llm_model,
-        prompt=full_prompt,
-        options={"temperature": 0.1},
+    client = OpenAI(
+        base_url=settings.nvidia_nim_base_url,
+        api_key=settings.nvidia_api_key,
     )
-    return response["response"]
-
-
-@retry(
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    reraise=True,
-)
-def _call_groq_fallback(system_prompt: str, user_text: str) -> str:
-    """
-    Call Groq (qwen/qwen3-32b) as the FALLBACK extractor.
-    Model name from config: settings.groq_model_fallback
-    Invoked only when local Ollama fails or is unavailable.
-    """
-    from groq import Groq
-
-    client = Groq(api_key=settings.groq_api_key)
     response = client.chat.completions.create(
-        model=settings.groq_model_fallback,
+        model=settings.nvidia_nim_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.1,
+        temperature=1.0,   # recommended by NVIDIA for all tasks
+        top_p=0.95,        # recommended by NVIDIA for all tasks
         max_tokens=2000,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return response.choices[0].message.content
+
 
 
 def extract_activities(
@@ -229,7 +213,7 @@ def extract_activities(
     """
     Extract structured activity events from raw text.
 
-    Order: local Qwen3-8B (Ollama) → Groq qwen/qwen3-32b (fallback).
+    Backend: NVIDIA NIM (nvidia/nemotron-3-super-120b-a12b) via OpenAI-compatible API.
 
     Args:
         text: Raw text to extract from (WhatsApp message, OCR output, etc.)
@@ -240,44 +224,27 @@ def extract_activities(
         (list[ExtractedActivity], audit_dict)
 
     Raises:
-        ExtractionError if both backends fail.
+        ExtractionError if the NVIDIA NIM call fails after retries.
     """
     system_prompt = _build_prompt(text, discipline_hint)
     llm_used = None
     raw_response = None
 
-    # --- Primary: Local Qwen3-8B via Ollama ---
+    # --- NVIDIA NIM ---
     try:
-        raw_response = _call_local_llm(system_prompt, text)
-        llm_used = f"ollama/{settings.local_llm_model}"
-        log.info("llm_extractor.local_llm_success", model=settings.local_llm_model, source=source_label)
-    except Exception as local_exc:
-        log.warning(
-            "llm_extractor.local_llm_failed",
-            model=settings.local_llm_model,
-            error=str(local_exc),
+        raw_response = _call_nvidia_nim(system_prompt, text)
+        llm_used = f"nvidia-nim/{settings.nvidia_nim_model}"
+        log.info("llm_extractor.nim_success", model=settings.nvidia_nim_model, source=source_label)
+    except Exception as nim_exc:
+        log.error(
+            "llm_extractor.nim_failed",
+            model=settings.nvidia_nim_model,
+            error=str(nim_exc),
             source=source_label,
         )
-
-    # --- Fallback: Groq qwen/qwen3-32b ---
-    if raw_response is None:
-        if not settings.groq_api_key:
-            raise ExtractionError(
-                f"Local LLM failed and no GROQ_API_KEY configured — cannot process {source_label}"
-            )
-        try:
-            raw_response = _call_groq_fallback(system_prompt, text)
-            llm_used = f"groq/{settings.groq_model_fallback}"
-            log.info("llm_extractor.groq_fallback_success", model=settings.groq_model_fallback, source=source_label)
-        except Exception as groq_exc:
-            log.error(
-                "llm_extractor.all_llm_failed",
-                local_error="already logged",
-                groq_error=str(groq_exc),
-            )
-            raise ExtractionError(
-                f"All LLM backends failed for message from {source_label}"
-            ) from groq_exc
+        raise ExtractionError(
+            f"NVIDIA NIM call failed for message from {source_label}: {nim_exc}"
+        ) from nim_exc
 
     # --- Parse and validate ---
     try:

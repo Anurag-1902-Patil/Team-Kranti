@@ -23,12 +23,12 @@ def set_test_env(monkeypatch=None):
     os.environ.setdefault("REVIEWER_TOKEN", "test-token")
     os.environ.setdefault("WHATSAPP_APP_SECRET", "test-secret")
     os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test-verify")
-    os.environ.setdefault("GROQ_API_KEY", "")  # Tests mock LLM calls
+    os.environ.setdefault("NVIDIA_API_KEY", "")  # Tests mock LLM calls
     os.environ.setdefault("MATCH_AUTO_ACCEPT_THRESHOLD", "0.85")
     os.environ.setdefault("MATCH_REVIEW_THRESHOLD", "0.55")
     os.environ.setdefault("QDRANT_URL", ":memory:")
-    os.environ.setdefault("LOCAL_LLM_MODEL", "qwen3:8b")
-    os.environ.setdefault("GROQ_MODEL_FALLBACK", "qwen/qwen3-32b")
+    os.environ.setdefault("NVIDIA_NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+    os.environ.setdefault("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
 
 
 @pytest.fixture(scope="function")

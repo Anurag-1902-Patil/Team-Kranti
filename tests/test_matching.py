@@ -189,55 +189,31 @@ class TestConfidenceRouting:
         assert len(selected) == 1
 
 
-class TestRerankerFallback:
+class TestRerankerNvidiaNIM:
     """
-    A7: Verify that the re-ranker's Groq fallback path works when local Ollama fails.
-    Patches the internal _call_local_llm function (not raw ollama.generate) so
-    these tests work without an Ollama server installed in the test environment.
+    A7: Verify that the re-ranker works with the NVIDIA NIM backend.
+    Patches _call_nvidia_nim (not raw openai) so these tests work
+    without a real NVIDIA_API_KEY in the test environment.
     """
 
-    def test_reranker_primary_fails_uses_groq_fallback(self, mocker):
+    def test_reranker_nim_success(self, mocker):
         """
-        When local Ollama fails, the re-ranker must fall back to Groq and still
-        return a valid MatchResult. The final result must be well-formed regardless
-        of which backend responded.
+        When NVIDIA NIM responds correctly, the re-ranker must return
+        a valid MatchResult with a non-zero final score.
         """
         from backend.services.matching.fuzzy_matcher import get_fuzzy_candidates
         from backend.services.matching.semantic_matcher import get_semantic_candidates
         from backend.services.matching.confidence import fuse_and_route
         from backend.db.models import MatchStatusEnum
 
-        groq_json = (
+        nim_json = (
             '{"ranked": [{"activity_id": "PIP-002", "score": 0.88, "reason": "exact match"}], '
-            '"overall_confidence": 0.88, "justification": "Groq fallback responded"}'
+            '"overall_confidence": 0.88, "justification": "NIM responded"}'
         )
 
-        # Patch the internal function (not raw ollama) — works without Ollama installed
-        mock_local = mocker.patch(
-            "backend.services.matching.confidence._call_local_llm",
-            side_effect=ConnectionError("Ollama not available"),
-        )
-        mock_groq_client = MagicMock()
-        mock_groq_client.chat.completions.create.return_value.choices = [
-            MagicMock(message=MagicMock(content=groq_json))
-        ]
-        mocker.patch("groq.Groq", return_value=mock_groq_client)
-        # Patch only the specific attributes needed — patching the whole object would
-        # replace match_auto_accept_threshold with MagicMock, breaking float comparisons.
-        mocker.patch.object(
-            __import__("backend.services.matching.confidence", fromlist=["settings"]).settings,
-            "groq_api_key",
-            "test-groq-key",
-        )
-        mocker.patch.object(
-            __import__("backend.services.matching.confidence", fromlist=["settings"]).settings,
-            "groq_model_fallback",
-            "qwen/qwen3-32b",
-        )
-        mocker.patch.object(
-            __import__("backend.services.matching.confidence", fromlist=["settings"]).settings,
-            "local_llm_model",
-            "qwen3:8b",
+        mock_nim = mocker.patch(
+            "backend.services.matching.confidence._call_nvidia_nim",
+            return_value=nim_json,
         )
 
         fuzzy = get_fuzzy_candidates("Erect Line 24\"-XX at chainage 12+450", ACTIVITY_INDEX, top_k=5)
@@ -250,38 +226,32 @@ class TestRerankerFallback:
             semantic,
         )
 
-        # Result must be valid regardless of which backend responded
         assert result.match_status in (
             MatchStatusEnum.matched,
             MatchStatusEnum.low_confidence_review,
         )
         assert result.selected_activity_id is not None
         assert result.final_score > 0.0
-        # Primary LLM must have been attempted
-        mock_local.assert_called_once()
+        mock_nim.assert_called_once()
 
-    def test_reranker_both_backends_fail_returns_equal_scores(self, mocker):
+    def test_reranker_nim_fails_returns_equal_scores(self, mocker):
         """
-        When both local LLM and Groq fail, re-ranker must not raise —
+        When NVIDIA NIM fails, the re-ranker must not raise —
         it falls back to equal weighting, and routing still works.
         """
         from backend.services.matching.fuzzy_matcher import get_fuzzy_candidates
         from backend.services.matching.semantic_matcher import get_semantic_candidates
         from backend.services.matching.confidence import fuse_and_route
 
-        # Patch both backends to fail
         mocker.patch(
-            "backend.services.matching.confidence._call_local_llm",
-            side_effect=ConnectionError("Ollama down"),
+            "backend.services.matching.confidence._call_nvidia_nim",
+            side_effect=ConnectionError("NIM unreachable"),
         )
-        import backend.services.matching.confidence as conf_mod
-        mocker.patch.object(conf_mod.settings, "groq_api_key", "")
-        mocker.patch.object(conf_mod.settings, "local_llm_model", "qwen3:8b")
 
         fuzzy = get_fuzzy_candidates("Erect Line 24\"-XX", ACTIVITY_INDEX, top_k=3)
         semantic = get_semantic_candidates("Erect Line 24\"-XX", top_k=3)
 
-        # Must not raise even with both LLMs down
+        # Must not raise even with NIM down
         result = fuse_and_route("Erect Line 24\"-XX", "piping", fuzzy, semantic)
         assert result is not None
         # Score comes entirely from fuzzy + semantic (no LLM component)

@@ -48,19 +48,13 @@ class Settings(BaseSettings):
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
 
-    # LLM — Local Ollama (PRIMARY for extraction and re-ranking)
-    # Run: ollama pull qwen3:8b
-    # Qwen3-8B chosen specifically for reliable single-GPU local inference during live demo.
-    # The newer Qwen3.8-27B line was ruled out as too heavy for reliable demo inference.
-    ollama_base_url: str = "http://localhost:11434"
-    local_llm_model: str = "qwen3:8b"
-
-    # LLM — Groq (FALLBACK for both extraction AND re-ranking)
-    # Named GROQ_MODEL_FALLBACK — not GROQ_MODEL_RERANK — because this single model
-    # serves as the fallback for two different call sites: structured extraction and
-    # candidate re-ranking. One model, two jobs, one config key.
-    groq_api_key: str = ""
-    groq_model_fallback: str = "qwen/qwen3-32b"
+    # LLM — NVIDIA NIM (PRIMARY for extraction and re-ranking)
+    # Uses the OpenAI-compatible endpoint at integrate.api.nvidia.com.
+    # Model: nvidia/nemotron-3-super-120b-a12b (120B total / 12B active MoE, 1M ctx).
+    # Get a free API key at https://build.nvidia.com — no local GPU required.
+    nvidia_api_key: str = ""
+    nvidia_nim_model: str = "nvidia/nemotron-3-super-120b-a12b"
+    nvidia_nim_base_url: str = "https://integrate.api.nvidia.com/v1"
 
     # Matching thresholds
     match_auto_accept_threshold: float = 0.85

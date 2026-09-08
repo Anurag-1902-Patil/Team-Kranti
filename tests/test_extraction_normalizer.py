@@ -217,8 +217,8 @@ class TestLLMExtractorParsing:
         activities = _parse_llm_response(raw)
         assert len(activities) == 1
 
-    def test_local_llm_failure_triggers_groq_fallback(self):
-        """When local Ollama (primary) fails, Groq fallback is tried."""
+    def test_nim_success_extracts_activities(self):
+        """When NVIDIA NIM succeeds, extract_activities returns valid results."""
         valid_response = json.dumps({
             "activities": [
                 {
@@ -236,34 +236,20 @@ class TestLLMExtractorParsing:
             ]
         })
 
-        # Patch the internal call functions directly (not raw ollama/groq modules)
-        # so these tests work without ollama/groq installed in the test environment.
-        with patch("backend.services.extraction.llm_extractor._call_local_llm") as mock_local, \
-             patch("backend.services.extraction.llm_extractor._call_groq_fallback") as mock_groq:
+        # Patch the internal NIM call directly — no real API key needed in tests.
+        with patch("backend.services.extraction.llm_extractor._call_nvidia_nim") as mock_nim:
+            mock_nim.return_value = valid_response
 
-            mock_local.side_effect = Exception("Local LLM unavailable")
-            mock_groq.return_value = valid_response
-
-            import backend.services.extraction.llm_extractor as llm_mod
-            original_settings = llm_mod.settings
-            llm_mod.settings = MagicMock(
-                groq_api_key="fake-key",
-                groq_model_fallback="qwen/qwen3-32b",
-                local_llm_model="qwen3:8b",
+            from backend.services.extraction.llm_extractor import extract_activities
+            activities, audit = extract_activities(
+                text="Foundation work complete",
+                discipline_hint="civil",
+                source_label="test",
             )
-
-            try:
-                from backend.services.extraction.llm_extractor import extract_activities
-                activities, audit = extract_activities(
-                    text="Foundation work complete",
-                    discipline_hint="civil",
-                    source_label="test",
-                )
-            finally:
-                llm_mod.settings = original_settings
 
         assert len(activities) == 1
         assert activities[0].event_type == "finish"
         assert activities[0].discipline == "civil"
-        # Groq fallback must have been called
-        mock_groq.assert_called_once()
+        # NIM must have been called once
+        mock_nim.assert_called_once()
+        assert "nvidia-nim" in audit["llm_used"]

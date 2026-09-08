@@ -117,3 +117,13 @@ All decisions are append-only. Log the date, the options considered, the choice,
 Merging these would corrupt both use cases: plan-activity lookup results would be polluted with historical event noise, and memory queries would return plan activity stubs rather than real site history. Keep them separate. The two-collection structure also mirrors the real-world distinction between "what is planned" and "what actually happened."
 **Logged by**: AI (Antigravity), explicitly required by user change request
 
+---
+
+## ADR-013: LLM Swap — NVIDIA NIM (nemotron-3-super-120b-a12b) Replaces Qwen3+Groq
+**Date**: 2026-09-08
+**Previous decision**: ADR-003 (Qwen3-8B via Ollama primary + Groq qwen/qwen3-32b fallback)
+**New decision**: **NVIDIA NIM `nvidia/nemotron-3-super-120b-a12b`** as sole LLM backend (no Ollama, no Groq)
+**Rationale**: User explicitly requested the swap. Nemotron-3-Super is served via NVIDIA NIM's OpenAI-compatible REST API (`https://integrate.api.nvidia.com/v1`) — no local GPU required. The model is a 120B total / 12B active MoE hybrid (Mamba-2 + Attention) with 1M token context, strong structured JSON extraction, and reasoning capabilities configurable via `enable_thinking`. NVIDIA recommends `temperature=1.0, top_p=0.95` across all tasks. Reasoning is disabled (`enable_thinking=False`) in both extraction and re-ranking call sites for lower latency on structured JSON tasks. The `<think>...</think>` block stripping in `_parse_llm_response()` and `_llm_rerank()` is retained since Nemotron emits the same format when thinking is on.
+**Model config**: `NVIDIA_API_KEY`, `NVIDIA_NIM_MODEL=nvidia/nemotron-3-super-120b-a12b`, `NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1`.
+**Dependencies**: `groq` and `ollama` removed from `requirements.txt`; `openai>=1.40.0` added (universal OpenAI-compatible client).
+**Logged by**: AI (Antigravity), per user change request 2026-09-08

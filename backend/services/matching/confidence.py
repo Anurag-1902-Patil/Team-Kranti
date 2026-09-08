@@ -4,7 +4,7 @@ Confidence scoring, LLM re-ranking, and threshold-gated routing.
 Pipeline:
   1. Receive top-k fuzzy candidates + top-k semantic candidates
   2. Merge by activity_id, deduplicate, normalize scores
-  3. LLM re-ranker (primary: local Qwen3-8B; fallback: Groq qwen/qwen3-32b):
+  3. LLM re-ranker (NVIDIA NIM — nvidia/nemotron-3-super-120b-a12b):
      given description + top-5 candidates, output ranked list with scores
   4. Fuse: 0.3 * fuzzy_norm + 0.3 * semantic_norm + 0.4 * llm_score
   5. Route by threshold: matched / low_confidence_review / unmatched_new
@@ -15,7 +15,6 @@ for full audit trail.
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
 
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -80,7 +79,15 @@ def _merge_candidates(
     return merged
 
 
-LLM_RERANK_PROMPT = """You are helping match a construction site activity report to the correct planned activity.
+# ---------------------------------------------------------------------------
+# Prompt — instructs Nemotron to return bare activity IDs, never full labels.
+#
+# Critical requirement: the model must copy the code (e.g. "PIP-003") exactly
+# as it appears between the brackets in the candidate list, not the full label.
+# The prompt makes this explicit to reduce bracket-echoing behaviour.
+# ---------------------------------------------------------------------------
+LLM_RERANK_PROMPT = """\
+You are helping match a construction site activity report to the correct planned activity.
 
 Field description (what the supervisor reported):
 "{description}"
@@ -90,30 +97,70 @@ Discipline: {discipline}
 Candidate planned activities (top candidates by string and semantic similarity):
 {candidates_text}
 
+Each candidate is shown as: [ACTIVITY_CODE] Activity Name
+
 Rank these candidates from most to least likely match.
 For each, assign a confidence score from 0.0 to 1.0 (1.0 = certain match).
 Consider: same physical work, same location/equipment, same discipline.
 
-Return JSON:
+IMPORTANT — activity_id rules:
+- The "activity_id" value must be ONLY the code, e.g. PIP-003
+- Copy it EXACTLY from between the brackets in the candidate list above
+- Do NOT include brackets: write PIP-003, not [PIP-003]
+- Do NOT include the activity name: write PIP-003, not "PIP-003 Hydrotest..."
+- Do NOT invent or guess an activity_id that is not in the candidate list
+
+Return ONLY valid JSON in this exact format:
 {{
   "ranked": [
-    {{"activity_id": "...", "score": 0.0, "reason": "brief reason"}},
+    {{"activity_id": "PIP-003", "score": 0.95, "reason": "brief reason"}},
     ...
   ],
-  "overall_confidence": 0.0,
+  "overall_confidence": 0.95,
   "justification": "brief explanation of your top choice"
-}}"""
+}}\
+"""
 
 
-def _call_local_llm(prompt: str) -> str:
-    """Call local Qwen3-8B via Ollama. Separated for testability."""
-    import ollama
-    resp = ollama.generate(
-        model=settings.local_llm_model,
-        prompt=prompt,
-        options={"temperature": 0.1},
+def _normalize_llm_activity_id(raw: str) -> str:
+    """
+    Normalize an activity_id string as returned by the LLM.
+
+    Handles all observed Nemotron output formats:
+      - "PIP-003"                                         -> PIP-003
+      - "[PIP-003]"                                       -> PIP-003
+      - "[PIP-003] Hydrotest Line 24\"-XX (N12 to N20)"   -> PIP-003
+      - '"PIP-003"'  (surrounding JSON-quote artifact)    -> PIP-003
+
+    Does NOT guess or fuzzy-match — returns the normalized string as-is.
+    The caller validates against the known candidate set.
+    """
+    s = raw.strip()
+    # Strip surrounding single or double quotes (JSON string-escaping artifact)
+    if len(s) >= 2 and s[0] in ('"', "'") and s[-1] == s[0]:
+        s = s[1:-1].strip()
+    # Extract code from "[CODE] Name..." or "[CODE]" patterns
+    if s.startswith("[") and "]" in s:
+        s = s[1:s.index("]")].strip()
+    return s
+
+
+def _call_nvidia_nim(prompt: str) -> str:
+    """Call NVIDIA NIM (nemotron-3-super-120b-a12b) via OpenAI-compatible API. Separated for testability."""
+    from openai import OpenAI
+    client = OpenAI(
+        base_url=settings.nvidia_nim_base_url,
+        api_key=settings.nvidia_api_key,
     )
-    return resp["response"]
+    resp = client.chat.completions.create(
+        model=settings.nvidia_nim_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=1.0,
+        top_p=0.95,
+        max_tokens=800,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    )
+    return resp.choices[0].message.content
 
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5), reraise=True)
@@ -125,14 +172,18 @@ def _llm_rerank(
     """
     Call LLM to re-rank candidates.
 
-    Primary: local Qwen3-8B via Ollama (settings.local_llm_model)
-    Fallback: Groq qwen/qwen3-32b (settings.groq_model_fallback)
+    Backend: NVIDIA NIM (nvidia/nemotron-3-super-120b-a12b) via OpenAI-compatible API.
 
-    Returns: (activity_id → llm_score, overall_confidence, justification)
+    Returns: (activity_id -> llm_score, overall_confidence, justification)
     """
+    top5 = candidates[:5]
+    # Build the valid-ID set from the candidates being sent to the LLM.
+    # Only IDs present here can legitimately appear in the response.
+    valid_ids: set[str] = {c.activity_id for c in top5}
+
     candidates_text = "\n".join(
         f"{i+1}. [{c.activity_id}] {c.activity_name}"
-        for i, c in enumerate(candidates[:5])
+        for i, c in enumerate(top5)
     )
 
     prompt = LLM_RERANK_PROMPT.format(
@@ -143,29 +194,12 @@ def _llm_rerank(
 
     raw_response = None
 
-    # --- Primary: local Qwen3-8B via Ollama ---
+    # --- NVIDIA NIM ---
     try:
-        raw_response = _call_local_llm(prompt)
-        log.debug("confidence.local_rerank_success", model=settings.local_llm_model)
+        raw_response = _call_nvidia_nim(prompt)
+        log.debug("confidence.nim_rerank_success", model=settings.nvidia_nim_model)
     except Exception as exc:
-        log.warning("confidence.local_rerank_failed", model=settings.local_llm_model, error=str(exc))
-
-    # --- Fallback: Groq qwen/qwen3-32b ---
-    if raw_response is None and settings.groq_api_key:
-        try:
-            from groq import Groq
-            client = Groq(api_key=settings.groq_api_key)
-            resp = client.chat.completions.create(
-                model=settings.groq_model_fallback,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                max_tokens=800,
-            )
-            raw_response = resp.choices[0].message.content
-            log.info("confidence.groq_fallback_rerank_success", model=settings.groq_model_fallback)
-        except Exception as exc:
-            log.error("confidence.groq_rerank_failed", error=str(exc))
+        log.warning("confidence.nim_rerank_failed", model=settings.nvidia_nim_model, error=str(exc))
 
     # Last resort: equal weighting
     if raw_response is None:
@@ -176,23 +210,75 @@ def _llm_rerank(
             "LLM unavailable — equal weighting applied",
         )
 
-    # Parse response — handle Qwen3 <think> blocks
+    # Parse response — handle Nemotron <think> blocks
     try:
         text = raw_response.strip()
         if "<think>" in text:
             end_think = text.rfind("</think>")
             if end_think != -1:
                 text = text[end_think + len("</think>"):].strip()
+
+        # Strip markdown code fences — defensive pattern (same as llm_extractor.py)
         if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:-1])
+            lines = text.split("\n")
+            inner_lines = lines[1:]  # drop opening ```json line
+            if inner_lines and inner_lines[-1].strip() == "```":
+                inner_lines = inner_lines[:-1]  # drop closing ``` only if present
+            text = "\n".join(inner_lines).strip()
+
         data = json.loads(text)
         ranked = data.get("ranked", [])
-        scores = {item["activity_id"]: float(item["score"]) for item in ranked}
-        overall = float(data.get("overall_confidence", 0.0))
-        justification = data.get("justification", "")
+        scores: dict[str, float] = {}
+
+        for item in ranked:
+            try:
+                raw_id = str(item.get("activity_id", "")).strip()
+                if not raw_id:
+                    log.warning("confidence.rerank_empty_id", item=str(item)[:100])
+                    continue
+
+                # Normalize all LLM formatting variants to a bare ID
+                activity_id = _normalize_llm_activity_id(raw_id)
+
+                # Guard: only accept IDs that were actually sent to the LLM
+                if activity_id not in valid_ids:
+                    log.warning(
+                        "confidence.rerank_unknown_id",
+                        raw_id=raw_id,
+                        normalized=activity_id,
+                        valid_ids=sorted(valid_ids),
+                    )
+                    continue
+
+                # Guard: duplicate ID — keep first occurrence (highest rank position)
+                if activity_id in scores:
+                    log.debug(
+                        "confidence.rerank_duplicate_id",
+                        activity_id=activity_id,
+                        kept_score=scores[activity_id],
+                        discarded_score=item.get("score"),
+                    )
+                    continue
+
+                # Validate and clamp score to [0.0, 1.0]
+                score = float(item.get("score", 0.0))
+                score = max(0.0, min(1.0, score))
+                scores[activity_id] = score
+
+            except (TypeError, ValueError) as item_exc:
+                log.warning("confidence.rerank_item_parse_failed", item=str(item)[:100], error=str(item_exc))
+                continue
+
+        overall = max(0.0, min(1.0, float(data.get("overall_confidence", 0.0))))
+        justification = str(data.get("justification", ""))
         return scores, overall, justification
-    except Exception as exc:
-        log.warning("confidence.rerank_parse_failed", error=str(exc))
+
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        log.warning(
+            "confidence.rerank_parse_failed",
+            error=str(exc),
+            raw=raw_response[:300] if raw_response else None,
+        )
         return {}, 0.0, ""
 
 

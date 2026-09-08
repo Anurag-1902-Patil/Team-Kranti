@@ -41,8 +41,8 @@ Session = sessionmaker(bind=engine)
 
 def banner(msg): print(f"\n{'='*60}\n{msg}\n{'='*60}")
 def step(msg): print(f"\n  ► {msg}")
-def ok(msg): print(f"  ✓ {msg}")
-def warn(msg): print(f"  ⚠ {msg}")
+def ok(msg): print(f"  [OK] {msg}")
+def warn(msg): print(f"  [WARN] {msg}")
 
 
 def run_demo():

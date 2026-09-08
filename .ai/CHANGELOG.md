@@ -120,3 +120,90 @@ All meaningful code changes made by AI (Antigravity) are logged here.
 - Added `scripts/smoke_test_qwen3_extraction.py` — validates Qwen3-8B JSON output against Pydantic schemas on 5 synthetic message types before full demo run.
 
 ### Final test result: **34/34 passed** ✅
+
+---
+
+## 2026-09-08 — NVIDIA NIM LLM Swap (ADR-013)
+
+**Session summary**: Replaced the Qwen3 + Groq dual-backend LLM stack with NVIDIA NIM `nvidia/nemotron-3-super-120b-a12b` as the sole backend. No local GPU required.
+
+### Code changes
+- **`backend/core/config.py`**: Removed `ollama_base_url`, `local_llm_model`, `groq_api_key`, `groq_model_fallback`. Added `nvidia_api_key`, `nvidia_nim_model`, `nvidia_nim_base_url`.
+- **`backend/services/extraction/llm_extractor.py`**: Removed `_call_local_llm` + `_call_groq_fallback`. Added `_call_nvidia_nim` (OpenAI-compatible client against NVIDIA NIM, `enable_thinking=False`, `temperature=1.0, top_p=0.95`). `extract_activities()` now has a single NIM path — failure raises `ExtractionError` immediately (no silent fallback).
+- **`backend/services/matching/confidence.py`**: Removed `_call_local_llm` (Ollama) + inline Groq block. Added `_call_nvidia_nim`. `_llm_rerank()` now has a single NIM path — failure falls back to equal-weighting (same as before).
+- **`backend/requirements.txt`**: Removed `groq==0.12.0` and `ollama==0.4.1`. Added `openai>=1.40.0`.
+- **`.env.example`**: Replaced Ollama + Groq LLM block with NVIDIA NIM block.
+- **`prompts/extractor_v1.txt`** and **`prompts/reranker_v1.txt`**: Updated LLM header comments.
+
+### Test changes
+- **`tests/conftest.py`**: Replaced `GROQ_API_KEY`, `LOCAL_LLM_MODEL`, `GROQ_MODEL_FALLBACK` env defaults with `NVIDIA_API_KEY`, `NVIDIA_NIM_MODEL`, `NVIDIA_NIM_BASE_URL`.
+- **`tests/test_matching.py`**: Rewrote `TestRerankerFallback` → `TestRerankerNvidiaNIM` with 2 tests: NIM success path (mocks `_call_nvidia_nim`) and NIM failure → equal-weighting path.
+- **`tests/test_extraction_normalizer.py`**: Replaced `test_local_llm_failure_triggers_groq_fallback` with `test_nim_success_extracts_activities` (mocks `_call_nvidia_nim`, asserts `audit["llm_used"]` starts with `nvidia-nim/`).
+
+### Memory docs updated
+- `DECISIONS.md`: ADR-013 appended.
+- `CURRENT_STATE.md`: Tech stack table + layer status rows updated.
+
+---
+
+## 2026-09-09 — Pipeline Stabilization (Session 5)
+
+**Session summary**: Full inspection of the entire pipeline. Fixed all concrete bugs preventing correct WhatsApp→PostgreSQL matching. No architectural changes.
+
+### Files changed
+
+#### `backend/services/matching/confidence.py`
+- **Bug 1 — Prompt (NEW fix)**: Rewrote `LLM_RERANK_PROMPT` to explicitly instruct the model:  
+  "The activity_id must be ONLY the code (e.g. PIP-003) — copy from between the brackets. Do NOT include the activity name. Do NOT include brackets."
+- **Bug 2 — ID normalizer (EXTENDED fix)**: Extracted `_normalize_llm_activity_id()` helper. Handles: bare IDs, `[PIP-003]`, `[PIP-003] Activity Name`, `"PIP-003"` (quoted). Added `valid_ids` set guard — unknown IDs (e.g. `PIP-999`) are logged as warnings and skipped, never mapped to a real candidate.
+- **Bug 3 — Code-fence stripper (FIX)**: Replaced naive `[1:-1]` slice with the same defensive pattern as `llm_extractor.py` — only removes the closing ``` line if it's actually present.
+- **Bug 4 — Score validation (NEW fix)**: Scores now clamped to `[0.0, 1.0]`. Non-numeric scores catch `TypeError/ValueError` per-item without killing the whole parse. Duplicate IDs logged at DEBUG and skipped. `overall_confidence` also clamped.
+- **Bug 5 — Exception scope**: Replaced bare `except Exception` in parse path with `except (json.JSONDecodeError, KeyError, TypeError)` plus `raw` in warning log.
+
+#### `backend/workers/tasks.py`
+- **Bug 6**: Removed dead `SELECT` at line ~431 (result was discarded before `sa_update`).
+- **Bug 7**: Removed dead `SELECT` in error handler at line ~503 (result was discarded before `sa_update`).
+- **Bug 8**: Fixed stale log key `task.chroma_index_failed` → `task.qdrant_index_failed`.
+
+#### `backend/services/institutional_memory/qdrant_store.py`
+- **Bug 9 — Qdrant API Migration**: Replaced deprecated `client.search()` with `client.query_points()` and `query_vector` with `query`. Fixed `AttributeError` crashing the institutional memory query step of the demo script.
+
+#### `frontend/app/` (schedule & memory pages)
+- **Bug 10 — UI Export Auth**: Fixed a bug where clicking "Export XER" or "Export Dataset" failed with a 401 Unauthorized `Bearer token required.` error. The `fetch` calls were using a deprecated, empty `AUTH_TOKEN` constant instead of the dynamic `getAuthToken()` function.
+
+### Files confirmed clean (no changes needed)
+`fuzzy_matcher.py`, `semantic_matcher.py`, `llm_extractor.py`, `whatsapp.py`, `models.py`, `config.py`, `normalizer.py`, `session.py`, `requirements.txt`
+
+### Root cause of regression
+The matched score of 0.5178 (unmatched_new) was caused by the LLM returning `"[PIP-003] Hydrotest Line 24\"-XX (N12 to N20)"` as the `activity_id` field instead of `"PIP-003"`. The lookup `llm_scores.get("PIP-003", 0.0)` returned 0.0, so the 0.40 LLM weight was lost. After the fix: LLM score 1.0 → fused score ≈ 0.918 → `matched`.
+
+---
+
+## 2026-09-09 — Schedule Import Feature & Native XER Roundtrip (Session 6)
+
+**Session summary**: Added schedule file import capabilities to allow planners/users to import `.xer` (Primavera P6) and schedule spreadsheet files (`.csv`, `.xlsx`, `.xls`) to directly view and work on activities in the UI. Built native XER parser and writer fallback to remove dependency fragility on PyP6Xer.
+
+### Files changed
+
+#### `backend/api/v1/schedule.py`
+- Added `POST /api/v1/schedule/import` endpoint accepting `.xer`, `.csv`, `.xlsx`, `.xls`.
+- Persists imported `.xer` to `data/synthetic/sample_schedule.xer` so that subsequent "Export XER" runs use the user's uploaded schedule.
+- Parses activities, maps WBS codes and dates, infers disciplines if absent.
+- Upserts activities into `plan_activities` table in PostgreSQL.
+- Triggers `reload_matching_index(db)` so fuzzy/semantic matching immediately incorporates imported activities.
+- Indexes activities into Qdrant vector store (`plan_activities` collection).
+
+#### `backend/services/scheduling/xer_parser.py`
+- Implemented `_parse_xer_native` parser to robustly read P6 tab-delimited tables (`%T TASK`, `%F`, `%R`) without external package failures.
+- Maintained fallback structure so PyP6Xer is attempted first and gracefully falls back to native parser.
+
+#### `backend/services/scheduling/xer_writer.py`
+- Implemented `_apply_actuals_to_xer_native` to safely update `act_start_date`, `act_end_date`, and `phys_complete_pct` on `%R` rows under the `TASK` table while preserving all other project structures, tables, and calendars byte-for-byte.
+
+#### `frontend/app/schedule/page.tsx`
+- Added "Import Schedule" button alongside "Export XER".
+- Added hidden file input supporting `.xer`, `.csv`, `.xlsx`, `.xls`.
+- Connected file upload handler with `FormData` to `POST /api/v1/schedule/import` with Bearer auth.
+- Added live loading state, success/error feedback banner with activity count, and automatic schedule refresh upon import.
+- Added empty-state call-to-action button allowing direct import if the database contains no activities.
+

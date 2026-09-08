@@ -12,8 +12,8 @@
 | ASR (voice) | faster-whisper (SYSTRAN) | Unchanged |
 | OCR — typed/printed | **Tesseract** (`pytesseract`) | Replaces PaddleOCR for this path |
 | OCR — handwritten diaries | **PP-OCRv5** (via PaddleOCR, CPU-only, 0.07B) | Replaces Groq vision — no GPU needed |
-| LLM primary | **Qwen3-8B** via Ollama | `ollama pull qwen3:8b` |
-| LLM fallback | Groq `qwen/qwen3-32b` (`GROQ_MODEL_FALLBACK`) | Fallback for *both* extraction + re-ranking |
+| LLM primary | **Nemotron-3-Super-120B-A12B** via NVIDIA NIM | `NVIDIA_API_KEY` required; OpenAI-compatible API |
+| LLM fallback | *(none — NIM is the sole backend)* | Failure → equal-weighting in re-ranker |
 | Vector DB | **Qdrant** | Two collections: plan_activities + progress_events (ADR-012) |
 | Spreadsheet | pandas + openpyxl | Unchanged |
 | Schedule | PyP6XER | XER round-trip only, no P6 API |
@@ -36,11 +36,11 @@
 | 3 | ASR (faster-whisper) | ✅ Done |
 | 3 | OCR — Tesseract (typed) | ✅ Done (final stack) |
 | 3 | OCR — PP-OCRv5 (handwritten) | ✅ Done (final stack) |
-| 3 | LLM extractor — Qwen3-8B primary / Groq fallback | ✅ Done (final stack) |
+| 3 | LLM extractor — NVIDIA NIM (nemotron-3-super-120b-a12b) | ✅ Done (ADR-013) |
 | 3 | Schema normalizer | ✅ Done |
 | 4 | Fuzzy matcher (RapidFuzz) | ✅ Done |
 | 4 | Semantic matcher (Sentence-Transformers, in-memory matrix) | ✅ Done |
-| 4 | Confidence scorer + LLM re-ranker — Qwen3-8B primary / Groq fallback | ✅ Done (final stack) |
+| 4 | Confidence scorer + LLM re-ranker — NVIDIA NIM (nemotron-3-super-120b-a12b) | ✅ Done (ADR-013) |
 | 5 | XER parser (PyP6XER) | ✅ Done |
 | 5 | XER writer (actuals apply) | ✅ Done |
 | 5 | Schedule service (write-back, confirm-new, index reload) | ✅ Done |
@@ -84,7 +84,6 @@
 ## Open Items (post-demo hardening, not needed for SIH)
 
 - [ ] Real WhatsApp Cloud API phone number registration (requires Meta Business verification)
-- [ ] Ollama auto-pull in docker-compose (currently: manual `ollama pull qwen3:8b`)
 - [ ] pytest GitHub Actions CI
 - [ ] Production CORS tightening
 - [ ] Rate limiting on webhook endpoint

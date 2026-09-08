@@ -55,11 +55,28 @@ def apply_actuals_to_xer(
     Raises:
         FileNotFoundError, ValueError on parse failure.
     """
-    from PyP6Xer.reader import Reader
-
     input_path = Path(input_xer_path)
     if not input_path.exists():
         raise FileNotFoundError(f"Input XER not found: {input_path}")
+
+    # Determine output path
+    if output_path is None:
+        tmp = tempfile.mktemp(suffix=".xer", prefix="sih26122_updated_")
+        output_path = Path(tmp)
+    else:
+        output_path = Path(output_path)
+
+    # Try PyP6Xer if available; fallback to native TSV modifier
+    try:
+        from PyP6Xer.reader import Reader
+        reader = Reader(str(input_path))
+        use_native = False
+    except Exception as exc:
+        log.info("xer_writer.using_native_writer", reason=str(exc))
+        use_native = True
+
+    if use_native:
+        return _apply_actuals_to_xer_native(input_path, validated_events, output_path)
 
     # Build a lookup: activity_id → actuals
     actuals_by_id: dict[str, dict] = {
@@ -69,8 +86,6 @@ def apply_actuals_to_xer(
     if not actuals_by_id:
         log.info("xer_writer.no_actuals_to_apply")
 
-    # Parse the XER
-    reader = Reader(str(input_path))
     updated_count = 0
 
     for project in reader.projects:
@@ -121,3 +136,75 @@ def apply_actuals_to_xer(
     )
 
     return output_path
+
+
+def _apply_actuals_to_xer_native(
+    input_path: Path,
+    validated_events: list[dict[str, Any]],
+    output_path: Path,
+) -> Path:
+    """
+    Native Primavera P6 XER actuals modifier.
+    Updates actual start, actual finish, and phys_complete_pct on TASK table rows
+    while preserving all other tables and lines.
+    """
+    actuals_by_id: dict[str, dict] = {
+        str(e["activity_id"]): e for e in validated_events if e.get("activity_id")
+    }
+
+    lines = input_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    output_lines: list[str] = []
+    current_table: str | None = None
+    task_fields: list[str] = []
+    updated_count = 0
+
+    for line in lines:
+        raw_line = line.rstrip("\r\n")
+        if not raw_line:
+            output_lines.append(line)
+            continue
+
+        parts = raw_line.split("\t")
+        tag = parts[0]
+
+        if tag == "%T":
+            current_table = parts[1] if len(parts) > 1 else None
+            output_lines.append(raw_line)
+        elif tag == "%F" and current_table == "TASK":
+            task_fields = parts[1:]
+            # Ensure act_start_date, act_end_date, phys_complete_pct exist in task_fields
+            for field in ["act_start_date", "act_end_date", "phys_complete_pct"]:
+                if field not in task_fields:
+                    task_fields.append(field)
+            output_lines.append("%F\t" + "\t".join(task_fields))
+        elif tag == "%R" and current_table == "TASK":
+            vals = parts[1:]
+            while len(vals) < len(task_fields):
+                vals.append("")
+            row_dict = {f: v for f, v in zip(task_fields, vals)}
+            task_code = str(row_dict.get("task_code", "") or "")
+
+            if task_code and task_code in actuals_by_id:
+                act = actuals_by_id[task_code]
+                if act.get("actual_start"):
+                    row_dict["act_start_date"] = _format_p6_date(act["actual_start"])
+                if act.get("actual_finish"):
+                    row_dict["act_end_date"] = _format_p6_date(act["actual_finish"])
+                if act.get("percent_complete") is not None:
+                    row_dict["phys_complete_pct"] = str(act["percent_complete"])
+                updated_count += 1
+
+            new_row_vals = [str(row_dict.get(f, "")) for f in task_fields]
+            output_lines.append("%R\t" + "\t".join(new_row_vals))
+        else:
+            output_lines.append(raw_line)
+
+    output_path.write_text("\n".join(output_lines) + "\n", encoding="utf-8")
+    log.info(
+        "xer_writer.native_done",
+        input=str(input_path),
+        output=str(output_path),
+        updated_activities=updated_count,
+    )
+    return output_path
+

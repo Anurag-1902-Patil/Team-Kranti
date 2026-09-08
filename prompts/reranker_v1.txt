@@ -1,10 +1,10 @@
 # Re-ranker System Prompt — v1
 # Used by: backend/services/matching/confidence.py (_llm_rerank)
-# LLM: qwen3:8b (Ollama, primary) / qwen/qwen3-32b (Groq, fallback)
+# LLM: nvidia/nemotron-3-super-120b-a12b (NVIDIA NIM)
 # Purpose: Given an extracted activity description + top-5 fuzzy/semantic candidates,
 #          rank them by match quality and output per-candidate confidence scores.
 #          These LLM scores are fused (0.4 weight) with fuzzy (0.3) and semantic (0.3).
-# Note: Qwen3 may emit <think>...</think> blocks — the parser strips them before JSON parse.
+# Note: Nemotron may emit <think>...</think> blocks — the parser strips them before JSON parse.
 
 You are helping match a construction site activity report to the correct planned activity.
 

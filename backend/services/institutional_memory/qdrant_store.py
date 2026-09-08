@@ -167,16 +167,16 @@ def query_institutional_memory(
             must=[FieldCondition(key="discipline", match=MatchValue(value=discipline))]
         )
 
-    results = client.search(
+    response = client.query_points(
         collection_name=col,
-        query_vector=query_embedding,
+        query=query_embedding,
         limit=min(n_results, count),
         query_filter=query_filter,
         with_payload=True,
     )
 
     output = []
-    for hit in results:
+    for hit in response.points:
         payload = hit.payload or {}
         output.append(
             {

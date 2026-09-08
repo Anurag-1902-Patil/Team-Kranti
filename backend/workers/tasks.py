@@ -425,11 +425,6 @@ def process_whatsapp_message(
 
             # Auto schedule write-back for high-confidence matches
             if match_result.match_status == MatchStatusEnum.matched and plan_activity_id:
-                from backend.db.models import PlanActivity as PA
-
-                session.execute(
-                    select(PA).where(PA.id == plan_activity_id)
-                )
                 update_vals: dict = {}
                 if event.actual_start_datetime:
                     update_vals["actual_start"] = event.actual_start_datetime
@@ -464,7 +459,7 @@ def process_whatsapp_message(
                     )
                     event.embedding_id = embedding_id
                 except Exception as exc:
-                    log.warning("task.chroma_index_failed", event_id=str(event.id), error=str(exc))
+                    log.warning("task.qdrant_index_failed", event_id=str(event.id), error=str(exc))
 
             created_event_ids.append(str(event.id))
             log.info(
@@ -500,9 +495,6 @@ def process_whatsapp_message(
 
         # Mark document as failed for manual triage
         try:
-            session.execute(
-                select(Document).where(Document.message_id == message_id)
-            )
             from sqlalchemy import update as sa_update
             session.execute(
                 sa_update(Document)

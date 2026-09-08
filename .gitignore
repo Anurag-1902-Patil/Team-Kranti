@@ -1,0 +1,58 @@
+# ===================================================================
+# Team Kranti — .gitignore
+# ===================================================================
+
+# Environment variables (NEVER commit secrets)
+.env
+.env*.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Next.js
+frontend/node_modules/
+node_modules/
+frontend/.next/
+.next/
+out/
+.npm
+npm-debug.log*
+
+# Docker / Persistent Storage data
+data/minio/
+data/qdrant/
+postgres_data/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

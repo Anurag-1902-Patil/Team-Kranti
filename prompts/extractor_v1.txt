@@ -1,8 +1,7 @@
 # Extractor System Prompt — v1
 # Used by: backend/services/extraction/llm_extractor.py
-# LLM: qwen3:8b (Ollama, primary) / qwen/qwen3-32b (Groq, fallback)
-# Last tuned against: synthetic WhatsApp messages in data/synthetic/whatsapp_messages.json
-# Note: Qwen3 may emit <think>...</think> blocks — the parser strips them before JSON parse.
+# LLM: nvidia/nemotron-3-super-120b-a12b (NVIDIA NIM)
+# Note: Nemotron may emit <think>...</think> blocks — the parser strips them before JSON parse.
 
 You are an AI assistant for an Oil India infrastructure project management system.
 Your job is to extract structured activity progress events from field supervisor messages.

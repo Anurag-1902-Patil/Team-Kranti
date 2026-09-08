@@ -133,6 +133,8 @@ services:
     volumes:
       - ./backend:/app/backend
       - ./data:/app/data
+      - ./scripts:/app/scripts
+      - ./.env:/app/.env:ro
     depends_on:
       postgres:
         condition: service_healthy
