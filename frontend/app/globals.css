@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+:root {
+  --sidebar-width: 240px;
+}
+
+body {
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(17 24 39);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(55 65 81);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(75 85 99);
+}
+
+/* Glass card */
+.glass-card {
+  @apply bg-gray-900 backdrop-blur-md border border-gray-800/60 rounded-xl;
+}
+
+/* Confidence badge colors */
+.badge-matched {
+  @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30;
+}
+
+.badge-review {
+  @apply bg-amber-500/15 text-amber-400 border border-amber-500/30;
+}
+
+.badge-new {
+  @apply bg-violet-500/15 text-violet-400 border border-violet-500/30;
+}
+
+.badge-declined {
+  @apply bg-gray-500/15 text-gray-400 border border-gray-500/30;
+}
+
+/* Discipline chip colors */
+.chip-piping {
+  @apply bg-blue-500/10 text-blue-400;
+}
+
+.chip-civil {
+  @apply bg-orange-500/10 text-orange-400;
+}
+
+.chip-electrical {
+  @apply bg-yellow-500/10 text-yellow-400;
+}
+
+.chip-instrumentation {
+  @apply bg-pink-500/10 text-pink-400;
+}
+
+.chip-hse {
+  @apply bg-red-500/10 text-red-400;
+}
+
+.chip-structural {
+  @apply bg-teal-500/10 text-teal-400;
+}
+
+.chip-mechanical {
+  @apply bg-cyan-500/10 text-cyan-400;
+}
+
+.chip-unknown {
+  @apply bg-gray-500/10 text-gray-400;
+}
+
+/* Animated gradient header */
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Pulse animation for live indicators */
+@keyframes pulse-soft {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
