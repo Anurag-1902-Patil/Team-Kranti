@@ -184,51 +184,7 @@ You can test the entire pipeline right from your command line using the included
   ```
 Open [http://localhost:3000/review](http://localhost:3000/review) to see the update land live with provenance badges and match confidence!
 
-### B. Live Real WhatsApp via Mobile Phone
-To receive real text and voice notes from your smartphone:
-1. Expose your backend port with a tunnel:
-   ```bash
-   ngrok http 8000
-   # or: cloudflared tunnel --url http://localhost:8000
-   ```
-2. In [Meta Developer Console](https://developers.facebook.com/) under **WhatsApp → Configuration**:
-   - **Callback URL**: `https://<your-tunnel-url>/api/v1/webhook/whatsapp`
-   - **Verify Token**: `sih122teamkranti`
-   - Subscribe to the **`messages`** webhook field.
-3. Send a WhatsApp voice note or text message from your phone to your registered test number. The Celery worker will download the audio, transcribe via `faster-whisper`, extract structured ontology attributes, and update the review queue!
-
----
-
-## 🌐 Step 7: Hosting & Sharing Your Project
-
-### 1. Local Wi-Fi Sharing (Same Room / Hackathon Table)
-Share your running dashboard with anyone on the same Wi-Fi router (no internet tunnel needed):
-1. Find your machine's local IP:
-   - **Windows**: `ipconfig` (Look for `IPv4 Address`, e.g. `192.168.1.45`)
-   - **Linux/Mac**: `ip addr` or `ifconfig`
-2. Anyone on the same Wi-Fi can open:
-   ```
-   http://192.168.1.45:3000
-   ```
-
-### 2. Worldwide Public Link (Free via Cloudflare Tunnel)
-Generate a 100% free, secure public HTTPS link with no account setup:
-1. Install `cloudflared`:
-   - **Windows**: `winget install --id Cloudflare.cloudflared`
-   - **Ubuntu**: `sudo dpkg -i cloudflared.deb`
-   - **macOS**: `brew install cloudflared`
-2. Start the tunnel for the frontend:
-   ```bash
-   cloudflared tunnel --url http://localhost:3000
-   ```
-3. Cloudflare outputs a public link (e.g. `https://team-kranti-demo.trycloudflare.com`). Share this URL with judges or evaluators anywhere in the world!
-
-### 3. Permanent Cloud VPS Deployment (Ubuntu 22.04 / 24.04)
-To host 24/7 on a cloud server (DigitalOcean, AWS EC2, GCP, Hetzner):
-1. SSH into the server: `ssh root@<SERVER_IP>`
-2. Install Docker: `curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh`
-3. Clone the repo and execute **Steps 1 through 4**.
-4. Set up a reverse proxy like Caddy or Nginx with Let's Encrypt for custom domain SSL.
+> 💡 **Live Mobile Phone Integration**: To receive updates directly from a physical smartphone over the Meta WhatsApp Cloud API, see the webhook tunnel configuration in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
