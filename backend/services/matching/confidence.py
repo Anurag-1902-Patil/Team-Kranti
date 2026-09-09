@@ -79,12 +79,12 @@ def _merge_candidates(
     return merged
 
 
+from pathlib import Path
+
+PROMPT_RERANK_V2_FILE = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "reranker_v2.txt"
+
 # ---------------------------------------------------------------------------
-# Prompt — instructs Nemotron to return bare activity IDs, never full labels.
-#
-# Critical requirement: the model must copy the code (e.g. "PIP-003") exactly
-# as it appears between the brackets in the candidate list, not the full label.
-# The prompt makes this explicit to reduce bracket-echoing behaviour.
+# Prompt — instructs model to return bare activity IDs and weigh context.
 # ---------------------------------------------------------------------------
 LLM_RERANK_PROMPT = """\
 You are helping match a construction site activity report to the correct planned activity.
@@ -93,15 +93,19 @@ Field description (what the supervisor reported):
 "{description}"
 
 Discipline: {discipline}
+Reported Location: {location}
+Reported Equipment: {equipment}
+Reported Line/Tag: {line_tag}
+Reported Contractor: {contractor}
 
-Candidate planned activities (top candidates by string and semantic similarity):
+Candidate planned activities:
 {candidates_text}
 
 Each candidate is shown as: [ACTIVITY_CODE] Activity Name
 
 Rank these candidates from most to least likely match.
 For each, assign a confidence score from 0.0 to 1.0 (1.0 = certain match).
-Consider: same physical work, same location/equipment, same discipline.
+Consider physical work, location/chainage proximity, equipment tags, line numbers, and discipline.
 
 IMPORTANT — activity_id rules:
 - The "activity_id" value must be ONLY the code, e.g. PIP-003
@@ -168,17 +172,15 @@ def _llm_rerank(
     description: str,
     discipline: str,
     candidates: list[MatchCandidate],
+    location: str | None = None,
+    equipment: str | None = None,
+    line_tag: str | None = None,
+    contractor: str | None = None,
 ) -> tuple[dict[str, float], float, str]:
     """
-    Call LLM to re-rank candidates.
-
-    Backend: NVIDIA NIM (nvidia/nemotron-3-super-120b-a12b) via OpenAI-compatible API.
-
-    Returns: (activity_id -> llm_score, overall_confidence, justification)
+    Call LLM to re-rank candidates using contextual signals.
     """
     top5 = candidates[:5]
-    # Build the valid-ID set from the candidates being sent to the LLM.
-    # Only IDs present here can legitimately appear in the response.
     valid_ids: set[str] = {c.activity_id for c in top5}
 
     candidates_text = "\n".join(
@@ -186,11 +188,33 @@ def _llm_rerank(
         for i, c in enumerate(top5)
     )
 
-    prompt = LLM_RERANK_PROMPT.format(
-        description=description,
-        discipline=discipline,
-        candidates_text=candidates_text,
-    )
+    template = LLM_RERANK_PROMPT
+    if PROMPT_RERANK_V2_FILE.exists():
+        try:
+            template = PROMPT_RERANK_V2_FILE.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+    try:
+        prompt = template.format(
+            description=description,
+            discipline=discipline,
+            location=location or "Not specified",
+            equipment=equipment or "Not specified",
+            line_tag=line_tag or "Not specified",
+            contractor=contractor or "Not specified",
+            candidates_text=candidates_text,
+        )
+    except Exception:
+        prompt = (
+            template.replace("{description}", description)
+            .replace("{discipline}", discipline)
+            .replace("{location}", location or "Not specified")
+            .replace("{equipment}", equipment or "Not specified")
+            .replace("{line_tag}", line_tag or "Not specified")
+            .replace("{contractor}", contractor or "Not specified")
+            .replace("{candidates_text}", candidates_text)
+        )
 
     raw_response = None
 
@@ -287,15 +311,23 @@ def fuse_and_route(
     discipline: str,
     fuzzy_candidates: list[FuzzyCandidate],
     semantic_candidates: list[SemanticCandidate],
+    location: str | None = None,
+    equipment: str | None = None,
+    line_tag: str | None = None,
+    contractor: str | None = None,
 ) -> MatchResult:
     """
-    Full matching pipeline: merge → LLM re-rank → fuse scores → threshold route.
+    Full matching pipeline: merge → context-weighted LLM re-rank → fuse scores → threshold route.
 
     Args:
         description: Extracted activity description.
         discipline: Discipline enum value string.
         fuzzy_candidates: From fuzzy_matcher.get_fuzzy_candidates()
         semantic_candidates: From semantic_matcher.get_semantic_candidates()
+        location: Optional reported location/chainage (contextual signal)
+        equipment: Optional reported equipment tag (contextual signal)
+        line_tag: Optional reported line number / component tag (contextual signal)
+        contractor: Optional reported contractor (contextual signal)
 
     Returns:
         MatchResult with selected activity, final score, status, and all candidates.
@@ -317,10 +349,16 @@ def fuse_and_route(
     candidates.sort(key=lambda c: 0.5 * c.fuzzy_score + 0.5 * c.semantic_score, reverse=True)
     top_for_llm = candidates[:5]
 
-    # Step 2: LLM re-rank
+    # Step 2: LLM re-rank with contextual signals
     try:
         llm_scores, overall_confidence, justification = _llm_rerank(
-            description, discipline, top_for_llm
+            description=description,
+            discipline=discipline,
+            candidates=top_for_llm,
+            location=location,
+            equipment=equipment,
+            line_tag=line_tag,
+            contractor=contractor,
         )
     except Exception as exc:
         log.warning("confidence.rerank_error", error=str(exc))
@@ -328,14 +366,27 @@ def fuse_and_route(
         overall_confidence = 0.0
         justification = f"LLM re-rank failed: {exc}"
 
-    # Step 3: Fuse scores
+    # Step 3: Fuse scores with contextual bonus
     for c in candidates:
         c.llm_score = llm_scores.get(c.activity_id, 0.0)
-        c.final_score = (
+        c_name_lower = c.activity_name.lower()
+
+        # Contextual signal boost
+        context_bonus = 0.0
+        if location and location.lower() in c_name_lower:
+            context_bonus += 0.08
+        if equipment and equipment.lower() in c_name_lower:
+            context_bonus += 0.10
+        if line_tag and line_tag.lower() in c_name_lower:
+            context_bonus += 0.10
+
+        fused = (
             0.30 * c.fuzzy_score
             + 0.30 * c.semantic_score
             + 0.40 * c.llm_score
+            + context_bonus
         )
+        c.final_score = max(0.0, min(1.0, fused))
 
     # Sort by final_score
     candidates.sort(key=lambda c: c.final_score, reverse=True)

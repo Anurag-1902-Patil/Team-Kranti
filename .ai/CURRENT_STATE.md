@@ -61,8 +61,12 @@
 | 11 | Tests (normalizer, matching, webhook security, reranker fallback) | ✅ Done (A7 added) |
 | 12 | Docker (compose + Qdrant service + tesseract in images) | ✅ Done (final stack) |
 | 13 | Next.js frontend (dashboard, events, review, schedule, memory, login) | ✅ Done (A6) |
-| 14 | `prompts/` versioned prompt templates | ✅ Done (A8) |
-| 15 | Memory docs updated (.ai/*) | ✅ Done |
+| 14 | `prompts/` versioned prompt templates | ✅ Done (A8, v2 added) |
+| 15 | Intelligence Layer (Deterministic Prediction Engine, Schedule & Delay Analytics) | ✅ Done (ADR-014) |
+| 16 | Terminology Normalization & Human-Gated Aliases Queue | ✅ Done (ADR-014) |
+| 17 | Grounded Natural Language Parameterized Search | ✅ Done (ADR-014) |
+| 18 | PM Frontend MVP (Gantt, Detail Drawer, Re-editing, Delay Charts, Provenance) | ✅ Done (ADR-014) |
+| 19 | Memory docs updated (.ai/*) | ✅ Done |
 
 ---
 

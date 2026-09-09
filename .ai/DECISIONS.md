@@ -127,3 +127,21 @@ Merging these would corrupt both use cases: plan-activity lookup results would b
 **Model config**: `NVIDIA_API_KEY`, `NVIDIA_NIM_MODEL=nvidia/nemotron-3-super-120b-a12b`, `NVIDIA_NIM_BASE_URL=https://integrate.api.nvidia.com/v1`.
 **Dependencies**: `groq` and `ollama` removed from `requirements.txt`; `openai>=1.40.0` added (universal OpenAI-compatible client).
 **Logged by**: AI (Antigravity), per user change request 2026-09-08
+
+---
+
+## ADR-014: Intelligence Layer & Project Controls Architecture
+**Date**: 2026-09-09
+**Decision**:
+1. **Deterministic Predictions (No Generative Math)**: Delays, forecast completion dates, and risk scores are computed mathematically from historical discipline variance factors and predecessor CPM float consumption. The LLM is used only to synthesize explanatory factors into plain-language narrative without altering numeric values.
+2. **Human-Gated Controlled Vocabulary**: Unrecognized site terminology detected in field updates is saved to `entity_aliases` with status `proposed`. It is never used in canonical matching dictionaries until explicitly approved by a human planner via the review queue.
+3. **Strict 5-Tier Provenance Separation**: Visual and data separation across:
+   - `source_fact`: Official P6 Schedule Plan or Equipment Master
+   - `ai_extraction`: Extracted by model from raw supervisor message / photo
+   - `ai_inference`: Deduced relationship or manpower estimate
+   - `prediction`: Computed mathematically from historical actuals & float
+   - `human_approval`: Verified and accepted/edited by a human planner
+4. **Post-Approval Re-Editing**: Events accepted automatically or by planners remain editable in the schedule view, preserving an immutable `correction_history` JSON log.
+5. **Safe Grounded Natural-Language Search**: Free-text queries are parsed into constrained Pydantic filter objects (`target_type`, `discipline`, `location`, `equipment_tag`, `is_delayed`, `is_critical`), and executed strictly via parameterized SQLAlchemy queries. No raw SQL execution.
+**Logged by**: AI (Antigravity), per SIH26122 Intelligence Layer specification
+

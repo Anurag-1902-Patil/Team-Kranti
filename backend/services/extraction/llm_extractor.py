@@ -1,21 +1,17 @@
 """
-LLM-based activity extraction service.
+LLM-based activity and entity extraction service — v2 ontology.
 
-Primary (and sole) backend: NVIDIA NIM API (nvidia/nemotron-3-super-120b-a12b).
-Served via an OpenAI-compatible endpoint — no local GPU required.
-Model name and base URL are config-driven (NVIDIA_NIM_MODEL, NVIDIA_NIM_BASE_URL)
-so swapping models only requires a .env change.
+Consolidated single LLM call per message: extracts 25+ ontology attributes,
+fine-grained linked entities (equipment, lines, chainages, contractors, blockers),
+and per-field confidence + cited evidence.
 
-The LLM receives raw text (from WhatsApp/OCR/ASR) and extracts structured
-activity events per the §3.4 schema. Uses few-shot examples embedded in the
-system prompt to guide format. Prompt versioned in prompts/extractor_v1.txt.
-
-Output is a list of ExtractedActivity objects — validated before returning.
-ExtractionError is raised on unrecoverable failures (triggers Celery retry).
+Prompt version: prompts/extractor_v2.txt (versioned per project guidelines).
+Model: Config-driven via NVIDIA NIM / OpenAI-compatible endpoint.
 """
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -27,114 +23,106 @@ from backend.core.config import get_settings
 log = structlog.get_logger(__name__)
 settings = get_settings()
 
+PROMPT_V2_FILE = Path(__file__).resolve().parent.parent.parent.parent / "prompts" / "extractor_v2.txt"
+
+
+class ExtractedEntityItem(BaseModel):
+    """Granular entity extracted from text (equipment, contractor, blocker, etc.)."""
+
+    entity_type: str = Field(..., description="equipment_tag, line_number, location, contractor, person, material, blocker")
+    raw_text: str = Field(..., description="Exact substring from input")
+    normalized_value: str | None = None
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    evidence: str | None = None
+
 
 class ExtractedActivity(BaseModel):
-    """Structured output from the LLM extractor."""
+    """Structured output from the LLM extractor covering full execution ontology."""
 
-    activity_description: str = Field(..., description="Description of the activity as reported")
-    event_type: str = Field(..., description="'start', 'finish', or 'partial_complete'")
+    activity_description: str = Field(..., description="Exact description of the activity as reported")
+    activity_description_normalized: str | None = None
+    discipline: str = Field(default="unknown", description="Civil, Structural, Piping, Mechanical, etc.")
+    sub_discipline: str | None = None
+    activity_type: str | None = None
+    work_package: str | None = None
+    wbs_code: str | None = None
+    construction_phase: str | None = None
+    execution_stage: str | None = None
+    event_type: str = Field(default="partial_complete", description="'start', 'finish', or 'partial_complete'")
+    status: str | None = "in_progress"
     actual_start: str | None = Field(None, description="ISO 8601 datetime or date string")
     actual_finish: str | None = Field(None, description="ISO 8601 datetime or date string")
+    planned_start: str | None = None
+    planned_finish: str | None = None
+    planned_duration_days: float | None = None
+    actual_duration_days: float | None = None
+    remaining_duration_days: float | None = None
     percent_complete: float | None = Field(None, ge=0, le=100)
     quantity_completed: float | None = None
     quantity_unit: str | None = None
     location_reference: str | None = None
-    discipline: str = Field(
-        default="unknown",
-        description="piping, civil, electrical, instrumentation, hse, structural, mechanical, or unknown",
-    )
-    extraction_notes: str | None = Field(
-        None, description="Any ambiguities or assumptions made during extraction"
-    )
+    location_area: str | None = None
+    location_unit: str | None = None
+    equipment_tag: str | None = None
+    line_number: str | None = None
+    tag_number: str | None = None
+    drawing_reference: str | None = None
+    material_reference: str | None = None
+    contractor_name: str | None = None
+    supervisor_name: str | None = None
+    engineer_name: str | None = None
+    crew_name: str | None = None
+    delay_status: str | None = None
+    delay_category: str | None = None
+    delay_reason: str | None = None
+    blocker_description: str | None = None
+    priority: str | None = "medium"
+    extraction_notes: str | None = None
+    field_provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExtractionError(Exception):
-    """Raised when extraction fails on both primary and fallback LLM."""
+    """Raised when extraction fails on LLM call after retries."""
     pass
 
 
-SYSTEM_PROMPT = """You are an AI assistant for an Oil India infrastructure project management system.
-Your job is to extract structured activity progress events from field supervisor messages.
+def _get_system_prompt_template() -> str:
+    """Read prompts/extractor_v2.txt if present, or return fallback."""
+    if PROMPT_V2_FILE.exists():
+        try:
+            return PROMPT_V2_FILE.read_text(encoding="utf-8")
+        except Exception as exc:
+            log.warning("llm_extractor.prompt_file_read_failed", error=str(exc))
 
-Extract every activity mentioned and return a JSON object with key "activities" containing a list.
-Each activity must have these fields:
-- activity_description: exact description of the activity as the supervisor reported it
-- event_type: one of "start", "finish", "partial_complete"
-- actual_start: ISO 8601 datetime if a start time is mentioned (e.g. "2026-08-27T08:30:00+05:30"), or null
-- actual_finish: ISO 8601 datetime if a finish/end time is mentioned, or null
-- percent_complete: number 0-100 if progress percentage mentioned, or null
-- quantity_completed: numeric quantity if mentioned (e.g. 120.5), or null
-- quantity_unit: unit of quantity if mentioned (e.g. "meters", "welds", "joints"), or null
-- location_reference: site location, grid reference, chainage, or area if mentioned, or null
-- discipline: one of piping, civil, electrical, instrumentation, hse, structural, mechanical, unknown
-- extraction_notes: any ambiguities or assumptions you made, or null
-
-Today's date context: {today}
-Project: Oil India infrastructure pipeline project
+    return """You are an AI assistant for an Oil India infrastructure project management system.
+Extract structured activity progress events and linked entities from field messages.
+Return JSON with keys "activities" and "linked_entities".
+Today: {today}
 Discipline hint: {discipline_hint}
-
-EXAMPLE INPUT: "Spool erection for Line 24\"-XX started at chainage 12+450, 09:30 AM. Estimated 3 days."
-EXAMPLE OUTPUT:
-{{
-  "activities": [
-    {{
-      "activity_description": "Spool erection for Line 24\\"-XX",
-      "event_type": "start",
-      "actual_start": "{today}T09:30:00+05:30",
-      "actual_finish": null,
-      "percent_complete": null,
-      "quantity_completed": null,
-      "quantity_unit": null,
-      "location_reference": "Chainage 12+450",
-      "discipline": "piping",
-      "extraction_notes": "Estimated duration 3 days noted but not extracted as a date field"
-    }}
-  ]
-}}
-
-EXAMPLE INPUT: "Civil team completed excavation for pump P-101 foundation (Area A, Grid 12-13). 100% done."
-EXAMPLE OUTPUT:
-{{
-  "activities": [
-    {{
-      "activity_description": "Excavation for pump P-101 foundation",
-      "event_type": "finish",
-      "actual_start": null,
-      "actual_finish": "{today}T00:00:00+05:30",
-      "percent_complete": 100.0,
-      "quantity_completed": null,
-      "quantity_unit": null,
-      "location_reference": "Area A, Grid 12-13",
-      "discipline": "civil",
-      "extraction_notes": "Actual finish time not specified; using report date"
-    }}
-  ]
-}}
-
-Return ONLY valid JSON. No explanations outside the JSON structure.
-Note: Nemotron may emit <think>...</think> reasoning blocks — output ONLY the JSON after thinking."""
+Return ONLY valid JSON."""
 
 
 def _build_prompt(text: str, discipline_hint: str | None) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     hint = discipline_hint or "not specified — infer from content"
-    return SYSTEM_PROMPT.format(today=today, discipline_hint=hint)
+    template = _get_system_prompt_template()
+    try:
+        return template.format(today=today, discipline_hint=hint)
+    except Exception:
+        return template.replace("{today}", today).replace("{discipline_hint}", hint)
 
 
-def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
+def _parse_llm_response(
+    raw_response: str, return_entities: bool = False
+) -> list[ExtractedActivity] | tuple[list[ExtractedActivity], list[ExtractedEntityItem]]:
     """
-    Parse and validate LLM JSON output → list of ExtractedActivity.
-
-    Handles:
-    - Markdown code fences (```json ... ```)
-    - Nemotron <think>...</think> reasoning blocks (stripped before parse)
-    - Bare JSON without wrapper
+    Parse and validate LLM JSON output → list of ExtractedActivity (and optionally ExtractedEntityItem).
+    Handles thinking tags, markdown code blocks, and model discrepancies.
     """
     text = raw_response.strip()
 
-    # Strip Nemotron thinking blocks if present
+    # Strip thinking blocks if present
     if "<think>" in text:
-        # Find the last </think> and take everything after
         end_think = text.rfind("</think>")
         if end_think != -1:
             text = text[end_think + len("</think>"):].strip()
@@ -142,7 +130,6 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
     # Strip markdown code fences
     if text.startswith("```"):
         lines = text.split("\n")
-        # Remove first line (```json or ```) and last line (```)
         inner_lines = lines[1:]
         if inner_lines and inner_lines[-1].strip() == "```":
             inner_lines = inner_lines[:-1]
@@ -150,25 +137,36 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
 
     data = json.loads(text)
 
-    # Handle both {"activities": [...]} and bare [...]
+    # Determine activities list and entities list
     if isinstance(data, list):
         activities_raw = data
+        entities_raw = []
     else:
         activities_raw = data.get("activities", [])
+        entities_raw = data.get("linked_entities", [])
 
-    activities = []
+    activities: list[ExtractedActivity] = []
     for item in activities_raw:
         try:
-            # Model-compatibility normalisation: some models return "activity"
-            # instead of "activity_description". Normalize before validation.
             if "activity" in item and "activity_description" not in item:
                 item["activity_description"] = item.pop("activity")
-
+            if not item.get("activity_description"):
+                continue
             activities.append(ExtractedActivity.model_validate(item))
         except ValidationError as exc:
             log.warning("llm_extractor.activity_validation_failed", error=str(exc), item=item)
             continue
 
+    entities: list[ExtractedEntityItem] = []
+    for item in entities_raw:
+        try:
+            entities.append(ExtractedEntityItem.model_validate(item))
+        except ValidationError as exc:
+            log.warning("llm_extractor.entity_validation_failed", error=str(exc), item=item)
+            continue
+
+    if return_entities:
+        return activities, entities
     return activities
 
 
@@ -178,17 +176,12 @@ def _parse_llm_response(raw_response: str) -> list[ExtractedActivity]:
     reraise=True,
 )
 def _call_nvidia_nim(system_prompt: str, user_text: str) -> str:
-    """
-    Call NVIDIA NIM (nemotron-3-super-120b-a12b) via OpenAI-compatible API.
-    Model name and base URL from config: settings.nvidia_nim_model / settings.nvidia_nim_base_url
-    Reasoning is disabled (enable_thinking=False) for structured JSON extraction
-    to avoid needing to strip large reasoning traces in latency-sensitive paths.
-    """
+    """Call OpenAI-compatible endpoint (NVIDIA NIM, Groq, Ollama, etc.)."""
     from openai import OpenAI
 
     client = OpenAI(
         base_url=settings.nvidia_nim_base_url,
-        api_key=settings.nvidia_api_key,
+        api_key=settings.nvidia_api_key or "no-key-required",
     )
     response = client.chat.completions.create(
         model=settings.nvidia_nim_model,
@@ -196,13 +189,15 @@ def _call_nvidia_nim(system_prompt: str, user_text: str) -> str:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
         ],
-        temperature=1.0,   # recommended by NVIDIA for all tasks
-        top_p=0.95,        # recommended by NVIDIA for all tasks
-        max_tokens=2000,
+        temperature=0.2,   # lower temperature for high-precision extraction
+        top_p=0.95,
+        max_tokens=3000,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return response.choices[0].message.content
 
+
+_call_llm_service = _call_nvidia_nim
 
 
 def extract_activities(
@@ -211,50 +206,31 @@ def extract_activities(
     source_label: str = "unknown",
 ) -> tuple[list[ExtractedActivity], dict[str, Any]]:
     """
-    Extract structured activity events from raw text.
-
-    Backend: NVIDIA NIM (nvidia/nemotron-3-super-120b-a12b) via OpenAI-compatible API.
+    Extract structured activities and entities from raw text.
 
     Args:
-        text: Raw text to extract from (WhatsApp message, OCR output, etc.)
-        discipline_hint: Discipline from sender_profiles (may be None).
-        source_label: For logging/audit trail.
+        text: Raw field report or OCR transcript.
+        discipline_hint: Inferred or sender-provided discipline hint.
+        source_label: Source identifier for provenance.
 
     Returns:
-        (list[ExtractedActivity], audit_dict)
-
-    Raises:
-        ExtractionError if the NVIDIA NIM call fails after retries.
+        (activities, audit_dict) where audit_dict contains 'linked_entities'.
     """
     system_prompt = _build_prompt(text, discipline_hint)
-    llm_used = None
+    llm_used = f"nvidia-nim/{settings.nvidia_nim_model}"
     raw_response = None
 
-    # --- NVIDIA NIM ---
     try:
         raw_response = _call_nvidia_nim(system_prompt, text)
-        llm_used = f"nvidia-nim/{settings.nvidia_nim_model}"
-        log.info("llm_extractor.nim_success", model=settings.nvidia_nim_model, source=source_label)
-    except Exception as nim_exc:
-        log.error(
-            "llm_extractor.nim_failed",
-            model=settings.nvidia_nim_model,
-            error=str(nim_exc),
-            source=source_label,
-        )
-        raise ExtractionError(
-            f"NVIDIA NIM call failed for message from {source_label}: {nim_exc}"
-        ) from nim_exc
+        log.info("llm_extractor.success", model=settings.nvidia_nim_model, source=source_label)
+    except Exception as exc:
+        log.error("llm_extractor.call_failed", model=settings.nvidia_nim_model, error=str(exc), source=source_label)
+        raise ExtractionError(f"LLM call failed for message from {source_label}: {exc}") from exc
 
-    # --- Parse and validate ---
     try:
-        activities = _parse_llm_response(raw_response)
+        activities, entities = _parse_llm_response(raw_response, return_entities=True)
     except (json.JSONDecodeError, KeyError) as exc:
-        log.error(
-            "llm_extractor.parse_failed",
-            error=str(exc),
-            raw_response=raw_response[:500] if raw_response else None,
-        )
+        log.error("llm_extractor.parse_failed", error=str(exc), raw_response=raw_response[:500] if raw_response else None)
         raise ExtractionError(f"LLM response parse failed: {exc}") from exc
 
     audit = {
@@ -262,15 +238,17 @@ def extract_activities(
         "llm_prompt_system": system_prompt[:500] + "...",
         "llm_response": raw_response,
         "llm_used": llm_used,
+        "model_version": settings.nvidia_nim_model,
         "discipline_hint_used": discipline_hint,
         "source_label": source_label,
         "activities_extracted": len(activities),
+        "linked_entities": [e.model_dump() for e in entities],
     }
 
     log.info(
         "llm_extractor.done",
-        llm=llm_used,
         activities=len(activities),
+        entities=len(entities),
         source=source_label,
     )
 

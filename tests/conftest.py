@@ -16,19 +16,21 @@ TEST_DB_URL = "sqlite:///./test_sih26122.db"
 def set_test_env(monkeypatch=None):
     """Set test environment variables before importing the app."""
     import os
-    os.environ.setdefault("APP_ENV", "test")
-    os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_sih26122.db")
-    os.environ.setdefault("DATABASE_URL_SYNC", TEST_DB_URL)
-    os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
-    os.environ.setdefault("REVIEWER_TOKEN", "test-token")
-    os.environ.setdefault("WHATSAPP_APP_SECRET", "test-secret")
-    os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test-verify")
-    os.environ.setdefault("NVIDIA_API_KEY", "")  # Tests mock LLM calls
-    os.environ.setdefault("MATCH_AUTO_ACCEPT_THRESHOLD", "0.85")
-    os.environ.setdefault("MATCH_REVIEW_THRESHOLD", "0.55")
-    os.environ.setdefault("QDRANT_URL", ":memory:")
-    os.environ.setdefault("NVIDIA_NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b")
-    os.environ.setdefault("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    from backend.core.config import get_settings
+    os.environ["APP_ENV"] = "test"
+    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test_sih26122.db"
+    os.environ["DATABASE_URL_SYNC"] = TEST_DB_URL
+    os.environ["REDIS_URL"] = "redis://localhost:6379/1"
+    os.environ["REVIEWER_TOKEN"] = "test-token"
+    os.environ["WHATSAPP_APP_SECRET"] = "test-secret"
+    os.environ["WHATSAPP_VERIFY_TOKEN"] = "test-verify"
+    os.environ["NVIDIA_API_KEY"] = "mock-key"
+    os.environ["MATCH_AUTO_ACCEPT_THRESHOLD"] = "0.85"
+    os.environ["MATCH_REVIEW_THRESHOLD"] = "0.55"
+    os.environ["QDRANT_URL"] = ":memory:"
+    os.environ["NVIDIA_NIM_MODEL"] = "nvidia/nemotron-3-super-120b-a12b"
+    os.environ["NVIDIA_NIM_BASE_URL"] = "https://integrate.api.nvidia.com/v1"
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="function")

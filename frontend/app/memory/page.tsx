@@ -209,7 +209,7 @@ export default function MemoryPage() {
                   <div className="flex flex-wrap gap-3 mt-2 text-xs text-gray-600">
                     {String(r.metadata.discipline || "") && <span>Discipline: {String(r.metadata.discipline)}</span>}
                     {String(r.metadata.actual_start || "") && (
-                      <span>Start: {new Date(String(r.metadata.actual_start)).toLocaleDateString()}</span>
+                      <span suppressHydrationWarning>Start: {new Date(String(r.metadata.actual_start)).toLocaleDateString()}</span>
                     )}
                     {String(r.metadata.confidence_score || "") && (
                       <span>Match Confidence: {(Number(r.metadata.confidence_score) * 100).toFixed(0)}%</span>

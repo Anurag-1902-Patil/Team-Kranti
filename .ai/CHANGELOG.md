@@ -207,3 +207,85 @@ The matched score of 0.5178 (unmatched_new) was caused by the LLM returning `"[P
 - Added live loading state, success/error feedback banner with activity count, and automatic schedule refresh upon import.
 - Added empty-state call-to-action button allowing direct import if the database contains no activities.
 
+---
+
+## 2026-09-09 — Intelligence Layer & PM-Oriented Frontend MVP (Session 7)
+
+**Session summary**: Built the complete Execution Intelligence Layer and Project Controls PM Minimal Frontend for SIH26122. Upgraded ontology schema, implemented deterministic predictions, human-gated terminology learning, safe grounded search, 5-tier provenance separation, and complete Next.js MVP pages.
+
+### Backend & Intelligence Services
+- **Database Schema (`backend/db/models.py`, `002_intelligence_layer.py`)**:
+  - Added extensible `disciplines` lookup table (seeded with 21 ontology disciplines).
+  - Added `organizations`, `contractors`, `people`, `equipment`, `materials`, `locations`, `activity_dependencies`, `entity_aliases`, `extracted_entities`.
+  - Expanded `progress_events` with 25+ ontology fields, `provenance_category` (5 tiers), `confidence_tier`, `ontology_payload`, and `correction_history` JSON log.
+  - Cross-database compatibility: wrapped JSON columns in `JSON().with_variant(JSONB, 'postgresql')` ensuring seamless migration in SQLite tests and Postgres production.
+- **Consolidated Extraction (`prompts/extractor_v2.txt`, `llm_extractor.py`, `normalizer.py`)**:
+  - Single consolidated LLM prompt extracting all 25+ ontology attributes, granular linked entities, and field-level confidence/evidence in a single call.
+- **Contextual Matching & Terminology Gate (`prompts/reranker_v2.txt`, `confidence.py`, `terminology.py`)**:
+  - Context-aware re-ranking prompt injecting location area, equipment tag, line number, contractor.
+  - Clean human-gated terminology dictionary: unrecognized terms saved to `entity_aliases` as `status='proposed'` for planner review.
+- **Deterministic Predictions & Analytics (`prediction_engine.py`, `schedule_intelligence.py`, `delay_intelligence.py`, `resource_intelligence.py`)**:
+  - Mathematically calculated predicted delay days, finish date, variance factor, and risk score using historical discipline variance and CPM float consumption.
+  - Synthesized plain-language explanatory narrative.
+  - 12 standard delay causes breakdown, site bottleneck ranking, contractor delay ranking, recurring blockers.
+- **Grounded Parameterized Search (`backend/services/search/nl_search.py`)**:
+  - Safe by construction: parses query into constrained Pydantic filter object (`NLSearchFilters`), executes parameterized SQLAlchemy queries, returns direct links.
+- **API Endpoints (`analysis.py`, `entities.py`, `search.py`, `review.py`)**:
+  - `GET /api/v1/analysis/schedule-health`, `/delays`, `/resources`, `/predictions/{activity_id}`.
+  - `GET /api/v1/entities/disciplines`, `/contractors`, `/equipment`, `/locations`, `/aliases`.
+  - `POST /api/v1/search/natural`.
+  - `POST /api/v1/review/alias/{id}/decide`, `POST /api/v1/review/{event_id}/re-edit`.
+- **Scripts & Seeding**:
+  - `scripts/seed_schedule.py`: Seeded 21 disciplines + 51 plan activities.
+  - `scripts/seed_historical_events.py`: Generated 153 backdated progress events across 20 activities, 4 contractors, 5 equipment, 4 locations, 11 dependencies, and proposed aliases.
+  - `scripts/backfill_extraction.py`: In-place re-extraction utility for historical documents.
+- **Tests**:
+  - `tests/test_intelligence_layer.py`: Added 5 unit tests for disciplines lookup, deterministic prediction engine, terminology normalization gate, grounded NL search, and post-approval re-editing.
+  - All 39 tests passing cleanly across the entire test suite.
+
+### Frontend MVP (Next.js 16 + TypeScript + Tailwind)
+- **Palette & Aesthetics (`globals.css`)**:
+  - Neutral dark engineering aesthetic: slate-950 background, crisp borders (`#1e293b`), restrained cyan accent (`#06b6d4`), compact monospace codes (`code-tag`), high density tables. Removed gradients and blobs.
+- **Provenance Separation (`ProvenanceBadge.tsx`)**:
+  - Renders 5 distinct visual categories: Source Fact, AI Extraction, AI Inference, Prediction, Human Approval with confidence score and evidence tooltip.
+- **Grounded Search Bar (`NLSearchBar.tsx`)**:
+  - Persistent header search bar with keyboard shortcut, query presets, parsed structured filter badges, and direct record linking.
+- **Navigation (`Sidebar.tsx`)**:
+  - Grouped into Overview, Execution (Schedule Gantt, Review Queue, All Progress), Analysis (Delay & Bottlenecks, Institutional Memory).
+- **Overview Page (`app/page.tsx`)**:
+  - 5 real stat cards (Schedule Progress % vs Plan, Critical Path Slippage Days, Total Ingested Updates, Review Queue Pending, Active Delay Blockers).
+  - Schedule Health & Forecast card with EVM progress bar.
+  - Milestone Tracker with baseline vs forecast dates.
+  - Live field progress feed with provenance badges.
+- **Schedule & Gantt Page (`app/schedule/page.tsx`, `GanttChart.tsx`, `ActivityDetailPanel.tsx`)**:
+  - P6-style table with visual timeline bars comparing baseline vs actual.
+  - Slide-out drawer displaying Activity Summary, Deterministic Mathematical Prediction Card (delay days, historical variance factor, predecessor float consumption, narrative), Linked Field Events, and Inline Planner Re-editing form.
+- **Review Queue Page (`app/review/page.tsx`)**:
+  - Dual tabs: Field Events (rapid action table with missing fields as "Not reported", Quick Accept, Change Match, Reject) and Terminology Proposals (one-click Approve / Reject for human-gated vocabulary learning).
+- **Delay & Bottleneck Analysis Page (`app/analysis/delays/page.tsx`, `DelayCharts.tsx`)**:
+  - 12 standard delay causes horizontal bar breakdown, bottleneck locations ranking, contractor variance ranking, recurring blockers table.
+- **All Events Page (`app/events/page.tsx`)**:
+  - Ingested audit register with provenance filter, discipline filter, search, and full ontology details.
+- **Static Validation**:
+  - `npm run build` completed with zero TypeScript errors across all routes.
+
+## 2026-09-09 — Full Docker Multi-Container Update & Deployment
+
+- **Container Image Rebuilds**:
+  - `teamkranti-frontend`: Rebuilt multi-stage Next.js 16 standalone image with static optimization, hydration fixes, and defensive delay charts.
+  - `teamkranti-backend`: Rebuilt with complete extended ontology, asyncpg, sentence-transformers, PyP6XER, and resilient database connection probe.
+  - `teamkranti-worker`: Rebuilt with Celery worker runtime and updated matching/prediction dependencies.
+- **Volume & Database Provisioning**:
+  - Reset Docker PostgreSQL and Qdrant volumes to align cleanly with the 16-table extended schema (`plan_activities`, `progress_events`, `activity_dependencies`, `contractors`, `equipment_records`, `locations`, `terminology_aliases`, etc.).
+  - Executed `scripts/seed_schedule.py` within Docker worker container: parsed synthetic P6 XER, seeded 51 activities, initialized sentence-transformer embeddings (all-MiniLM-L6-v2), and indexed in Qdrant.
+  - Executed `scripts/seed_historical_events.py` within Docker worker container: seeded 153 backdated historical progress events, 4 contractors, 5 equipment records, 4 locations, and 11 schedule dependencies.
+- **Verification & Health**:
+  - Backend API (`http://localhost:8000/health`): status "ok", Qdrant "ok".
+  - Schedule API (`http://localhost:8000/api/v1/schedule/activities`): 51 activities verified.
+  - Delay Analytics API (`http://localhost:8000/api/v1/analysis/delays`): 56 delay events across 13 causes.
+  - Frontend (`http://localhost:3000`): all pages (Overview, Schedule Gantt, Delay Analysis, Review Queue) returning HTTP 200.
+
+
+
+
+

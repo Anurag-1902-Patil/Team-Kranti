@@ -13,9 +13,11 @@ All decisions are append-only — no existing decision is overwritten.
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -307,6 +309,7 @@ async def confirm_new_activity(
             plan_activity_id=new_activity.id,
             activity_name_plan=new_activity.activity_name,
             confidence_score=1.0,  # Human-confirmed = full confidence
+            provenance_category="human_approval",
         )
     )
 
@@ -335,3 +338,104 @@ async def confirm_new_activity(
     )
 
     return ReviewDecisionOut.model_validate(decision)
+
+
+class AliasDecisionRequest(BaseModel):
+    decision: str  # approved or rejected
+    notes: str | None = None
+
+
+@router.post("/alias/{alias_id}/decide")
+async def decide_alias(
+    alias_id: uuid.UUID,
+    body: AliasDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Human planner decision on AI-proposed terminology alias."""
+    from backend.db.models import EntityAlias
+
+    result = await db.execute(select(EntityAlias).where(EntityAlias.id == alias_id))
+    alias = result.scalar_one_or_none()
+    if not alias:
+        raise HTTPException(status_code=404, detail="Alias not found")
+
+    alias.status = "approved" if body.decision.lower() == "approved" else "rejected"
+    alias.approved_by = getattr(current_user, "username", "planner")
+    alias.reviewed_at = datetime.now(tz=timezone.utc)
+    await db.commit()
+
+    log.info("review.alias_decided", alias_id=str(alias_id), status=alias.status)
+    return {"status": "ok", "alias_id": str(alias_id), "decision": alias.status}
+
+
+class ReEditRequest(BaseModel):
+    actual_start: datetime | None = None
+    actual_finish: datetime | None = None
+    percent_complete: float | None = None
+    activity_id_plan: str | None = None
+    notes: str | None = None
+
+
+@router.post("/{event_id}/re-edit", response_model=ProgressEventOut)
+async def re_edit_event(
+    event_id: uuid.UUID,
+    body: ReEditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Any = Depends(get_current_user),
+) -> ProgressEventOut:
+    """
+    Post-approval / post-auto-accept re-edit by planner.
+    Original AI value is retained in correction_history; actuals are updated.
+    """
+    event = await _get_event_or_404(event_id, db)
+
+    history_entry = {
+        "edited_at": datetime.now(tz=timezone.utc).isoformat(),
+        "edited_by": getattr(current_user, "username", "planner"),
+        "previous_values": {
+            "actual_start": event.actual_start_datetime.isoformat() if event.actual_start_datetime else None,
+            "actual_finish": event.actual_finish_datetime.isoformat() if event.actual_finish_datetime else None,
+            "percent_complete": event.percent_complete,
+            "activity_id_plan": event.activity_id_plan,
+        },
+        "notes": body.notes,
+    }
+
+    current_history = event.correction_history or []
+    current_history.append(history_entry)
+
+    if body.actual_start is not None:
+        event.actual_start_datetime = body.actual_start
+    if body.actual_finish is not None:
+        event.actual_finish_datetime = body.actual_finish
+    if body.percent_complete is not None:
+        event.percent_complete = body.percent_complete
+    if body.activity_id_plan is not None:
+        event.activity_id_plan = body.activity_id_plan
+
+    event.correction_history = current_history
+    event.provenance_category = "human_approval"
+    event.reviewed_by_planner = True
+    event.planner_notes = body.notes or event.planner_notes
+
+    # Update linked plan activity actuals if available
+    if event.plan_activity_id:
+        update_vals = {}
+        if body.actual_start is not None:
+            update_vals["actual_start"] = body.actual_start
+        if body.actual_finish is not None:
+            update_vals["actual_finish"] = body.actual_finish
+        if body.percent_complete is not None:
+            update_vals["actual_percent_complete"] = body.percent_complete
+
+        if update_vals:
+            await db.execute(
+                update(PlanActivity)
+                .where(PlanActivity.id == event.plan_activity_id)
+                .values(**update_vals)
+            )
+
+    await db.commit()
+    await db.refresh(event)
+    return ProgressEventOut.model_validate(event)

@@ -69,14 +69,29 @@ app.add_middleware(
 )
 
 # --- Register routers ---
-from backend.api.v1 import auth, events, memory, review, schedule, webhook  # noqa: E402
+from backend.api.v1 import (  # noqa: E402
+    analysis,
+    auth,
+    entities,
+    events,
+    memory,
+    review,
+    schedule,
+    search,
+    webhook,
+)
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(webhook.router, prefix="/webhooks", tags=["Ingestion"])
+app.include_router(webhook.router, prefix="/api/v1/webhook", tags=["Ingestion"])
+app.include_router(webhook.router, prefix="/api/v1/webhooks", tags=["Ingestion"])
 app.include_router(events.router, prefix="/api/v1/events", tags=["Events"])
 app.include_router(review.router, prefix="/api/v1/review", tags=["Review"])
 app.include_router(schedule.router, prefix="/api/v1/schedule", tags=["Schedule"])
 app.include_router(memory.router, prefix="/api/v1/memory", tags=["Institutional Memory"])
+app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["Analysis"])
+app.include_router(entities.router, prefix="/api/v1/entities", tags=["Entities"])
+app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 
 
 @app.get("/health", tags=["Health"])

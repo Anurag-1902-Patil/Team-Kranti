@@ -20,84 +20,69 @@
 | `deps.py` | Shared FastAPI dependencies — get_db, get_current_user (Bearer token) |
 | `v1/webhook.py` | GET/POST /webhooks/whatsapp — HMAC verify, idempotency, Celery enqueue |
 | `v1/events.py` | GET /events (list + filter), GET /events/{id} (detail + candidates) |
-| `v1/review.py` | POST /review/{id}/accept|edit|decline|confirm_new, GET /review/queue |
-| `v1/schedule.py` | GET /schedule/activities, POST /schedule/activities, GET /schedule/export-xer |
+| `v1/review.py` | POST /review/{id}/accept|edit|decline|confirm_new, GET /review/queue, POST /review/alias/{id}/decide, POST /review/{id}/re-edit |
+| `v1/schedule.py` | GET /schedule/activities, POST /schedule/activities, GET /schedule/export-xer, POST /schedule/import |
+| `v1/analysis.py` | GET /analysis/schedule-health, /delays, /resources, /predictions/{activity_id} |
+| `v1/entities.py` | GET /entities/disciplines, /contractors, /equipment, /locations, /aliases |
+| `v1/search.py` | POST /search/natural (safe grounded parameterized search) |
 | `v1/memory.py` | GET /memory/query, GET /memory/export (ZIP), GET /memory/stats |
-
-### Schemas (`backend/schemas/`)
-| File | Purpose |
-|---|---|
-| `event.py` | ProgressEventCreate, ProgressEventOut, ProgressEventListOut, MatchCandidateSchema |
-| `review.py` | ReviewAcceptRequest, ReviewEditRequest, ReviewDeclineRequest, ReviewConfirmNewRequest, ReviewDecisionOut |
-| `schedule.py` | PlanActivityOut, PlanActivityCreate, PlanActivityListOut, XERExportOut |
 
 ### Services (`backend/services/`)
 
-**ingestion/**
+**analytics/**
 | File | Purpose |
 |---|---|
-| `whatsapp.py` | Parses Meta webhook payloads → typed WAMessage models |
-| `media.py` | Downloads from WhatsApp CDN, uploads to MinIO, generates presigned URLs |
+| `prediction_engine.py` | Computes deterministic delay days, finish date, variance factor, risk score, and narrative |
+| `schedule_intelligence.py` | Computes schedule health, EVM progress, critical path float consumption |
+| `delay_intelligence.py` | Analyzes 12 root cause delay categories, bottleneck areas, contractor delay rankings |
+| `resource_intelligence.py` | Analyzes observed vs inferred manpower, equipment status |
 
-**extraction/**
+**search/**
 | File | Purpose |
 |---|---|
-| `asr.py` | faster-whisper ASR — audio bytes → transcript (lazy model load singleton) |
-| `ocr.py` | PaddleOCR (printed), Groq vision (handwritten), pdfplumber/pdf2image (PDFs), pandas (XLSX/CSV) |
-| `llm_extractor.py` | Groq primary / Ollama fallback LLM extractor with few-shot prompt, retry, JSON parsing |
-| `normalizer.py` | Maps ExtractedActivity → ProgressEventCreate with enum validation, datetime parsing |
+| `nl_search.py` | Grounded search parser: free text → constrained Pydantic filter → parameterized SQLAlchemy |
 
 **matching/**
 | File | Purpose |
 |---|---|
 | `fuzzy_matcher.py` | RapidFuzz token_sort_ratio + partial_ratio, top-k candidates |
 | `semantic_matcher.py` | Sentence-Transformers all-MiniLM-L6-v2, in-memory embedding matrix, cosine similarity |
-| `confidence.py` | Merge fuzzy+semantic, LLM re-rank (Groq/Ollama), score fusion 0.3/0.3/0.4, threshold routing |
+| `confidence.py` | Contextual re-ranking prompt, LLM re-rank, 0.3/0.3/0.4 fusion, threshold routing |
+| `terminology.py` | Human-gated entity alias lookup and proposed alias submission |
 
-**scheduling/**
+**extraction/**
 | File | Purpose |
 |---|---|
-| `xer_parser.py` | PyP6XER → plan_activities dicts with discipline inference |
-| `xer_writer.py` | Apply actual_start/finish/pct to XER, write output file |
-| `schedule_service.py` | DB write-back, new activity creation (confirm_new), index reload |
-
-**institutional_memory/**
-| File | Purpose |
-|---|---|
-| `chroma_store.py` | ChromaDB persistent client — progress_events + plan_activities collections |
-| `exporter.py` | Postgres → Parquet + CSV + SCHEMA.md + summary_stats.json |
-
-### Workers (`backend/workers/`)
-| File | Purpose |
-|---|---|
-| `celery_app.py` | Celery config — Redis broker, late ACK, time limits |
-| `tasks.py` | process_whatsapp_message — full 10-step pipeline, 3-attempt retry with exponential backoff |
-
-### Security (`backend/security/`)
-| File | Purpose |
-|---|---|
-| `hmac.py` | HMAC-SHA256 constant-time verification for Meta webhook |
+| `asr.py` | faster-whisper ASR — audio bytes → transcript (lazy model load singleton) |
+| `ocr.py` | Tesseract (printed), PP-OCRv5 (handwritten), pdfplumber/pdf2image (PDFs), pandas (XLSX/CSV) |
+| `llm_extractor.py` | NVIDIA NIM Nemotron single-pass consolidated extractor (25+ ontology fields) |
+| `normalizer.py` | Maps 21 disciplines, constructs ProgressEventCreate with ontology payload & confidence tier |
 
 ### Alembic (`backend/alembic/`)
 | File | Purpose |
 |---|---|
 | `env.py` | Reads DATABASE_URL_SYNC, imports Base for autogenerate |
-| `versions/001_initial_schema.py` | Creates all 7 tables, indexes, enums |
+| `versions/001_initial_schema.py` | Creates initial 7 tables, indexes, enums |
+| `versions/002_intelligence_layer.py` | Adds 9 relational entity tables, expands progress_events with 25+ fields |
 
 ## Frontend (`frontend/`)
 | File | Purpose |
 |---|---|
-| `app/layout.tsx` | Root layout — dark theme, Inter font, sidebar |
-| `app/globals.css` | Tailwind + custom CSS: glass-card, badge colors, chip colors, gradient |
-| `app/page.tsx` | Dashboard — stats cards, review queue preview, recent events |
-| `app/events/page.tsx` | Events list — status/discipline filters, confidence bars, pagination |
-| `app/review/page.tsx` | Review queue — split view with all 4 actions |
-| `app/schedule/page.tsx` | Plan activities + XER export button |
-| `app/memory/page.tsx` | Semantic query, stats, results, dataset export |
-| `components/Sidebar.tsx` | Navigation sidebar with active state |
-| `components/ConfidenceBadge.tsx` | ConfidenceBadge, DisciplineChip, ConfidenceBar |
-| `lib/api.ts` | API client helpers — base URL, auth headers, typed fetch |
-| `lib/types.ts` | TypeScript interfaces for all API entities |
+| `app/layout.tsx` | Root layout with dark engineering theme, Sidebar, and top NLSearchBar header |
+| `app/globals.css` | Neutral slate-950 palette, provenance badge tokens, compact table styles |
+| `app/page.tsx` | Overview Dashboard MVP — 5 real stat cards, schedule health, milestone tracker, provenance feed |
+| `app/schedule/page.tsx` | Primavera P6 schedule view with Gantt chart, activity detail slide-out, XER import/export |
+| `app/review/page.tsx` | Planner Review Queue MVP — dual tabs for field events (rapid action) and terminology proposals |
+| `app/analysis/delays/page.tsx` | Delay & Bottleneck Analysis MVP — 12 root causes, bottleneck locations, contractor ranking |
+| `app/events/page.tsx` | All progress events audit register with provenance and discipline filters |
+| `components/Sidebar.tsx` | Navigation grouped into Overview, Execution, and Analysis |
+| `components/ProvenanceBadge.tsx` | 5-tier provenance visual badges (Source Fact, AI Extraction, Inference, Prediction, Approval) |
+| `components/NLSearchBar.tsx` | Grounded natural language search input with parsed filter pills & direct record linking |
+| `components/GanttChart.tsx` | High-density schedule table with visual baseline vs actual progress timeline bars |
+| `components/ActivityDetailPanel.tsx` | Activity detail slide-out drawer with deterministic prediction card & inline planner re-editing |
+| `components/DelayCharts.tsx` | 12 standard delay causes breakdown, site bottleneck ranking, recurring blockers |
+| `lib/api.ts` | Typed client for all analysis, predictions, entities, search, and review endpoints |
+| `lib/types.ts` | Complete TypeScript interfaces for the full ontology and intelligence layer |
 | `Dockerfile` | Multi-stage build → minimal runtime |
 
 ## Data (`data/`)

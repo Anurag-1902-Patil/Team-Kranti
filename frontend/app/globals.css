@@ -1,108 +1,141 @@
 @import "tailwindcss";
 
 :root {
-  --sidebar-width: 240px;
+  --sidebar-width: 250px;
+  --bg-app: #080c14;
+  --bg-surface: #0f172a;
+  --bg-elevated: #1e293b;
+  --border-subtle: #1e293b;
+  --border-prominent: #334155;
+  --accent-cyan: #06b6d4;
+  --accent-steel: #0284c7;
 }
 
 body {
   font-feature-settings: "cv11", "ss01";
+  background-color: var(--bg-app);
+  color: #f1f5f9;
 }
 
-/* Custom scrollbar for dark theme */
+/* Custom scrollbar for dark engineering theme */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(17 24 39);
+  background: #090d16;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(55 65 81);
-  border-radius: 3px;
+  background: #334155;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(75 85 99);
+  background: #475569;
 }
 
-/* Glass card */
-.glass-card {
-  @apply bg-gray-900 backdrop-blur-md border border-gray-800/60 rounded-xl;
+/* Engineering surface card */
+.pm-card {
+  background-color: #0d1322;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
 }
 
-/* Confidence badge colors */
-.badge-matched {
-  @apply bg-emerald-500/15 text-emerald-400 border border-emerald-500/30;
+.pm-card-hover {
+  background-color: #0d1322;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.badge-review {
-  @apply bg-amber-500/15 text-amber-400 border border-amber-500/30;
+.pm-card-hover:hover {
+  border-color: #334155;
+  background-color: #11192d;
 }
 
-.badge-new {
-  @apply bg-violet-500/15 text-violet-400 border border-violet-500/30;
+/* Provenance Separation Badges (§1.1, §2.1) */
+.provenance-source-fact {
+  background-color: rgba(39, 39, 42, 0.7);
+  color: #e4e4e7;
+  border: 1px solid rgba(82, 82, 91, 0.6);
 }
 
-.badge-declined {
-  @apply bg-gray-500/15 text-gray-400 border border-gray-500/30;
+.provenance-ai-extraction {
+  background-color: rgba(14, 165, 233, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
 }
 
-/* Discipline chip colors */
-.chip-piping {
-  @apply bg-blue-500/10 text-blue-400;
+.provenance-ai-inference {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-.chip-civil {
-  @apply bg-orange-500/10 text-orange-400;
+.provenance-prediction {
+  background-color: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
 }
 
-.chip-electrical {
-  @apply bg-yellow-500/10 text-yellow-400;
+.provenance-human-approval {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
 }
 
-.chip-instrumentation {
-  @apply bg-pink-500/10 text-pink-400;
+/* Status and Confidence Badges */
+.badge-tier-high {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-.chip-hse {
-  @apply bg-red-500/10 text-red-400;
+.badge-tier-medium {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
-.chip-structural {
-  @apply bg-teal-500/10 text-teal-400;
+.badge-tier-low {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-.chip-mechanical {
-  @apply bg-cyan-500/10 text-cyan-400;
+/* Compact Monospace Codes */
+.code-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  letter-spacing: -0.02em;
 }
 
-.chip-unknown {
-  @apply bg-gray-500/10 text-gray-400;
+/* Compact Engineering Table */
+.pm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
 }
 
-/* Animated gradient header */
-.gradient-text {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.pm-table th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 500;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  background-color: #0b1120;
+  border-bottom: 1px solid #1e293b;
 }
 
-/* Pulse animation for live indicators */
-@keyframes pulse-soft {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.5;
-  }
+.pm-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #172033;
+  color: #cbd5e1;
 }
 
-.pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
+.pm-table tr:hover td {
+  background-color: rgba(30, 41, 59, 0.4);
 }

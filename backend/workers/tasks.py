@@ -347,11 +347,21 @@ def process_whatsapp_message(
                 top_k=10,
             )
 
+            discipline_val = (
+                event_create.discipline.value
+                if hasattr(event_create.discipline, "value")
+                else str(event_create.discipline)
+            )
+
             match_result = fuse_and_route(
                 description=extracted.activity_description,
-                discipline=event_create.discipline.value,
+                discipline=discipline_val,
                 fuzzy_candidates=fuzzy_candidates,
                 semantic_candidates=semantic_candidates,
+                location=event_create.location_reference or event_create.location_area,
+                equipment=event_create.equipment_tag,
+                line_tag=event_create.line_number or event_create.tag_number,
+                contractor=event_create.contractor_name,
             )
 
             # Resolve plan_activity_id FK
@@ -367,7 +377,22 @@ def process_whatsapp_message(
                     plan_activity_id = pa.id
                     activity_name_plan = pa.activity_name
 
-            # Create ProgressEvent
+            # Create ProgressEvent with complete ontology and provenance fields
+            provenance_cat = (
+                "source_fact"
+                if event_create.source_type == SourceTypeEnum.spreadsheet
+                else "ai_extraction"
+            )
+
+            # Re-evaluate confidence tier according to final matching score
+            conf_tier = event_create.confidence_tier
+            if match_result.final_score >= settings.confidence_high_threshold:
+                conf_tier = "high"
+            elif match_result.final_score >= settings.confidence_medium_threshold:
+                conf_tier = "medium"
+            else:
+                conf_tier = "low"
+
             event = ProgressEvent(
                 project_id=event_create.project_id,
                 document_id=doc.id,
@@ -375,16 +400,50 @@ def process_whatsapp_message(
                 plan_activity_id=plan_activity_id,
                 activity_name_plan=activity_name_plan,
                 activity_description_extracted=event_create.activity_description_extracted,
+                activity_description_raw=event_create.activity_description_raw,
+                activity_description_normalized=event_create.activity_description_normalized,
                 discipline=event_create.discipline,
+                sub_discipline=event_create.sub_discipline,
                 event_type=event_create.event_type,
+                activity_type=event_create.activity_type,
+                work_package=event_create.work_package,
+                wbs_code=event_create.wbs_code,
+                construction_phase=event_create.construction_phase,
+                execution_stage=event_create.execution_stage,
                 actual_start_datetime=event_create.actual_start_datetime,
                 actual_finish_datetime=event_create.actual_finish_datetime,
+                planned_start=event_create.planned_start,
+                planned_finish=event_create.planned_finish,
+                planned_duration_days=event_create.planned_duration_days,
+                actual_duration_days=event_create.actual_duration_days,
+                remaining_duration_days=event_create.remaining_duration_days,
                 percent_complete=event_create.percent_complete,
                 quantity_completed=event_create.quantity_completed,
                 quantity_unit=event_create.quantity_unit,
                 location_reference=event_create.location_reference,
+                location_area=event_create.location_area,
+                location_unit=event_create.location_unit,
+                equipment_tag=event_create.equipment_tag,
+                line_number=event_create.line_number,
+                tag_number=event_create.tag_number,
+                drawing_reference=event_create.drawing_reference,
+                material_reference=event_create.material_reference,
+                contractor_name=event_create.contractor_name,
+                supervisor_name=event_create.supervisor_name,
+                engineer_name=event_create.engineer_name,
+                crew_name=event_create.crew_name,
+                status=event_create.status,
+                delay_status=event_create.delay_status,
+                delay_category=event_create.delay_category,
+                delay_reason=event_create.delay_reason,
+                blocker_description=event_create.blocker_description,
+                priority=event_create.priority,
+                is_critical_path=event_create.is_critical_path,
+                total_float_days=event_create.total_float_days,
                 confidence_score=match_result.final_score,
+                confidence_tier=conf_tier,
                 match_status=match_result.match_status,
+                provenance_category=provenance_cat,
                 source_type=event_create.source_type,
                 source_document_id=event_create.source_document_id,
                 extracted_by=event_create.extracted_by,
@@ -395,9 +454,27 @@ def process_whatsapp_message(
                     "match_justification": match_result.llm_justification,
                     "match_status": match_result.match_status.value,
                 },
+                ontology_payload=event_create.ontology_payload,
+                correction_history=[],
             )
             session.add(event)
             session.flush()
+
+            # Persist extracted linked entities
+            from backend.db.models import ExtractedEntity
+            for ent in audit_trail.get("linked_entities", []):
+                ent_row = ExtractedEntity(
+                    event_id=event.id,
+                    document_id=doc.id,
+                    entity_type=ent.get("entity_type", "unknown"),
+                    raw_text=ent.get("raw_text", ""),
+                    normalized_value=ent.get("normalized_value"),
+                    confidence=float(ent.get("confidence", 0.8)),
+                    evidence=ent.get("evidence"),
+                    extraction_method="llm_v2",
+                    model_version=settings.nvidia_nim_model,
+                )
+                session.add(ent_row)
 
             # Write match candidates to matches table
             for candidate in match_result.all_candidates[:10]:

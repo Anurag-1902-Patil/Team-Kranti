@@ -18,6 +18,9 @@ import sys
 import os
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # Ensure backend is on the Python path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -41,7 +44,16 @@ def main():
     print("SIH26122 — Schedule Seed Script")
     print("=" * 60)
 
-    engine = create_engine(settings.database_url_sync, pool_pre_ping=True)
+    db_url = os.getenv("DATABASE_URL_SYNC", settings.database_url_sync)
+    try:
+        engine = create_engine(db_url, pool_pre_ping=True)
+        with engine.connect() as conn:
+            pass
+    except Exception as exc:
+        print(f"⚠ Database at {db_url} unreachable ({exc}). Falling back to local SQLite: sqlite:///./sih26122.db")
+        db_url = "sqlite:///./sih26122.db"
+        engine = create_engine(db_url, connect_args={"check_same_thread": False})
+
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -50,6 +62,47 @@ def main():
     # -------------------------------------------------------------------------
     Base.metadata.create_all(engine)
     print("✓ Tables verified")
+
+    # 1b. Seed disciplines lookup table (extensible ontology)
+    from backend.db.models import Discipline
+    DISCIPLINES_SEED = [
+        ("civil", "Civil", "Execution", "Earthworks, foundations, concrete, grading"),
+        ("structural", "Structural", "Execution", "Structural steel, pipe racks, supports"),
+        ("piping", "Piping", "Execution", "Aboveground & underground piping, fabrication, erection, hydrotesting"),
+        ("mechanical", "Mechanical", "Execution", "Equipment erection, alignment, static and rotating"),
+        ("static_equipment", "Static Equipment", "Execution", "Vessels, heat exchangers, tanks, columns"),
+        ("rotating_equipment", "Rotating Equipment", "Execution", "Pumps, compressors, blowers, turbines"),
+        ("electrical", "Electrical", "Execution", "Substations, MCC, cabling, transformers, switchgear"),
+        ("instrumentation", "Instrumentation", "Execution", "Transmitters, control valves, DCS, PLC, calibrations"),
+        ("telecom", "Telecom", "Execution", "Fiber optics, CCTV, PA/GA, wireless site communications"),
+        ("hvac", "HVAC", "Execution", "Building ventilation, AHUs, chiller packages"),
+        ("fire_and_safety", "Fire & Safety", "HSE", "Deluge systems, fire hydrants, gas detection, extinguishers"),
+        ("hse", "HSE", "HSE", "Site permits, toolbox talks, inspections, environmental compliance"),
+        ("qa_qc", "QA/QC", "Quality", "NDT inspections, welding inspection, material test certificates"),
+        ("procurement", "Procurement", "Supply Chain", "Vendor POs, expediting, freight, long-lead items"),
+        ("engineering", "Engineering", "Technical", "Drawings, 3D models, calculations, vendor doc review"),
+        ("planning", "Planning", "Project Controls", "Primavera P6 schedules, EVM progress, lookaheads"),
+        ("commissioning", "Commissioning", "Commissioning", "Pre-commissioning, loop checks, startup, punchlists"),
+        ("construction", "Construction", "Execution", "General civil/mechanical site execution and supervision"),
+        ("logistics", "Logistics", "Supply Chain", "Transport, heavy hauling, port clearances"),
+        ("material_management", "Material Management", "Supply Chain", "Warehouse, preservation, MTC tracking"),
+        ("administration", "Administration", "Management", "Camp, site security, contractual records"),
+    ]
+    for order, (code, name, category, desc) in enumerate(DISCIPLINES_SEED, start=1):
+        existing_disc = session.execute(
+            select(Discipline).where(Discipline.code == code)
+        ).scalar_one_or_none()
+        if not existing_disc:
+            session.add(Discipline(
+                code=code,
+                name=name,
+                category=category,
+                description=desc,
+                display_order=order,
+                is_active=True,
+            ))
+    session.commit()
+    print(f"✓ Seeded {len(DISCIPLINES_SEED)} extensible ontology disciplines")
 
     # -------------------------------------------------------------------------
     # 2. Load synthetic XER
@@ -105,15 +158,15 @@ def main():
     print(f"✓ Embedding index loaded ({len(activity_index)} activities)")
 
     # -------------------------------------------------------------------------
-    # 4. Index plan activities in ChromaDB
+    # 4. Index plan activities in Qdrant
     # -------------------------------------------------------------------------
-    from backend.services.institutional_memory.qdrant_store import index_plan_activity
-
-    for row in all_activities:
-        pa = session.execute(
-            select(PlanActivity).where(PlanActivity.activity_id == row.activity_id)
-        ).scalar_one()
-        try:
+    try:
+        from backend.services.institutional_memory.qdrant_store import index_plan_activity, _get_client
+        _get_client()
+        for row in all_activities:
+            pa = session.execute(
+                select(PlanActivity).where(PlanActivity.activity_id == row.activity_id)
+            ).scalar_one()
             embedding_id = index_plan_activity(
                 activity_id=row.activity_id,
                 activity_name=row.activity_name,
@@ -121,11 +174,10 @@ def main():
                 project_id=settings.project_id,
             )
             pa.embedding_id = embedding_id
-        except Exception as exc:
-            print(f"  ⚠ ChromaDB index failed for {row.activity_id}: {exc}")
-
-    session.commit()
-    print(f"✓ ChromaDB indexed {len(all_activities)} activities")
+        session.commit()
+        print(f"✓ Qdrant indexed {len(all_activities)} activities")
+    except Exception as exc:
+        print(f"  [INFO] Qdrant service offline (skipping vector store): {exc}")
 
     # -------------------------------------------------------------------------
     # 5. Load sender profiles

@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     nvidia_nim_model: str = "nvidia/nemotron-3-super-120b-a12b"
     nvidia_nim_base_url: str = "https://integrate.api.nvidia.com/v1"
 
+    # Confidence tiers (apply across ontology fields & matching)
+    confidence_high_threshold: float = 0.90
+    confidence_medium_threshold: float = 0.70
+
     # Matching thresholds
     match_auto_accept_threshold: float = 0.85
     match_review_threshold: float = 0.55
@@ -79,7 +83,12 @@ class Settings(BaseSettings):
     # File upload limits
     max_file_size_bytes: int = 50 * 1024 * 1024  # 50 MB
 
-    @field_validator("match_auto_accept_threshold", "match_review_threshold")
+    @field_validator(
+        "match_auto_accept_threshold",
+        "match_review_threshold",
+        "confidence_high_threshold",
+        "confidence_medium_threshold",
+    )
     @classmethod
     def validate_threshold(cls, v: float) -> float:
         if not 0.0 <= v <= 1.0:

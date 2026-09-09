@@ -1,45 +1,58 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch, API_BASE, getAuthToken } from "@/lib/api";
 import type { PlanActivity } from "@/lib/types";
-import { DisciplineChip } from "@/components/ConfidenceBadge";
-import { Download, Upload, BarChart2, Calendar, CheckCircle, AlertCircle } from "lucide-react";
+import GanttChart from "@/components/GanttChart";
+import ActivityDetailPanel from "@/components/ActivityDetailPanel";
+import { Download, Upload, CheckCircle, AlertCircle, RefreshCw, Calendar } from "lucide-react";
 
-interface ActivityList {
+interface ActivityListResponse {
   total: number;
   page: number;
   page_size: number;
   items: PlanActivity[];
 }
 
-export default function SchedulePage() {
-  const [activities, setActivities] = useState<ActivityList | null>(null);
+function ScheduleContent() {
+  const searchParams = useSearchParams();
+  const deepLinkedActivityId = searchParams.get("activity_id");
+
+  const [activities, setActivities] = useState<PlanActivity[]>([]);
+  const [totalCount, setTotalCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [discipline, setDiscipline] = useState("all");
+  const [selectedActivity, setSelectedActivity] = useState<PlanActivity | null>(null);
+
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function load() {
+  async function loadActivities() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: "1", page_size: "30" });
-      if (discipline !== "all") params.set("discipline", discipline);
-      if (search.trim()) params.set("search", search.trim());
-      const data = await apiFetch<ActivityList>(`/api/v1/schedule/activities?${params}`);
-      setActivities(data);
+      const data = await apiFetch<ActivityListResponse>("/api/v1/schedule/activities?page=1&page_size=100");
+      const items = data.items || [];
+      setActivities(items);
+      setTotalCount(data.total || items.length);
+
+      // Handle deep-link activity query parameter
+      if (deepLinkedActivityId) {
+        const found = items.find((a) => a.activity_id === deepLinkedActivityId);
+        if (found) setSelectedActivity(found);
+      }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load schedule activities:", e);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, [discipline, search]);
+  useEffect(() => {
+    loadActivities();
+  }, [deepLinkedActivityId]);
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -66,15 +79,13 @@ export default function SchedulePage() {
       }
 
       const data = await res.json();
-      setImportMsg(`✓ ${data.message || `Imported ${data.total} activities successfully from ${file.name}`}`);
-      await load();
-    } catch (err: any) {
-      setImportMsg(`Error: ${err.message || String(err)}`);
+      setImportMsg(`✓ Successfully imported ${data.total || 0} activities from ${file.name}`);
+      await loadActivities();
+    } catch (err: unknown) {
+      setImportMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -94,200 +105,124 @@ export default function SchedulePage() {
       a.download = "sih26122_updated_schedule.xer";
       a.click();
       URL.revokeObjectURL(url);
-      setExportMsg("✓ XER downloaded successfully.");
+      setExportMsg("✓ Validated schedule exported to Primavera P6 XER.");
     } catch (e) {
-      setExportMsg(`Error: ${String(e)}`);
+      setExportMsg(`Export failed: ${String(e)}`);
     } finally {
       setExporting(false);
     }
   }
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="p-6 max-w-7xl mx-auto space-y-5 font-sans">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
         <div>
-          <h1 className="text-2xl font-bold gradient-text">Schedule</h1>
-          <p className="text-sm text-gray-500 mt-1">Plan activities with validated actuals applied.</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-100">
+              Primavera P6 Schedule &amp; Execution Gantt
+            </h1>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+              {totalCount} Plan Activities
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Canonical Primavera P6 L5/L6 Schedule • Baseline Dates, Real-time Actuals &amp; Delay Projections
+          </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* Action Buttons: Import / Export XER */}
+        <div className="flex items-center gap-2.5">
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileSelect}
-            accept=".xer,.csv,.xlsx,.xls"
+            accept=".xer,.csv,.xlsx"
             className="hidden"
-            id="import-schedule-input"
+            id="schedule-file-input"
           />
+
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 text-gray-200 border border-gray-700 text-sm font-medium hover:bg-gray-700 hover:text-white disabled:opacity-50 transition-colors shadow-sm"
-            id="import-schedule-btn"
-            title="Import Primavera P6 (.xer) or Schedule spreadsheet (.csv, .xlsx)"
+            className="px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            title="Upload P6 .XER or spreadsheet"
           >
-            <Upload className="w-4 h-4 text-violet-400" />
-            {importing ? "Importing..." : "Import Schedule"}
+            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+            {importing ? "Importing..." : "Import XER"}
           </button>
+
           <button
             onClick={exportXer}
             disabled={exporting}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors shadow-sm"
-            id="export-xer-btn"
+            className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-medium text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 shadow-sm"
+            title="Download XER with actuals"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-3.5 h-3.5" />
             {exporting ? "Generating..." : "Export XER"}
+          </button>
+
+          <button
+            onClick={loadActivities}
+            disabled={loading}
+            className="p-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-cyan-400" : ""}`} />
           </button>
         </div>
       </div>
 
+      {/* Status Notifications */}
       {(importMsg || exportMsg) && (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {importMsg && (
-            <div className={`p-3 rounded-lg flex items-center gap-2 text-sm border ${
+            <div className={`p-2.5 rounded text-xs flex items-center gap-2 border font-mono ${
               importMsg.startsWith("✓")
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
+                : "bg-rose-950/60 border-rose-800/60 text-rose-400"
             }`}>
               {importMsg.startsWith("✓") ? (
-                <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
               ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
               )}
               <span>{importMsg}</span>
             </div>
           )}
           {exportMsg && (
-            <div className={`p-3 rounded-lg flex items-center gap-2 text-sm border ${
+            <div className={`p-2.5 rounded text-xs flex items-center gap-2 border font-mono ${
               exportMsg.startsWith("✓")
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
+                : "bg-rose-950/60 border-rose-800/60 text-rose-400"
             }`}>
-              {exportMsg.startsWith("✓") ? (
-                <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-              ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-              )}
+              <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
               <span>{exportMsg}</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Filters */}
-      <div className="glass-card p-4 flex flex-wrap gap-4 items-end">
-        <div className="flex-1 min-w-[200px]">
-          <label className="text-xs text-gray-500 block mb-1 uppercase tracking-wide font-medium">Search</label>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search activity name..."
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1 uppercase tracking-wide font-medium">Discipline</label>
-          <select
-            value={discipline}
-            onChange={(e) => setDiscipline(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
-          >
-            <option value="all">All</option>
-            {["piping","civil","electrical","instrumentation","hse","structural","mechanical"].map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      {/* Gantt & Schedule Table View */}
+      <GanttChart
+        activities={activities}
+        onSelectActivity={(act) => setSelectedActivity(act)}
+        selectedActivityId={selectedActivity?.activity_id}
+      />
 
-      {/* Activities Table */}
-      <div className="glass-card overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <span className="text-sm font-medium text-white">
-              {activities ? `${activities.total} activities` : "Loading..."}
-            </span>
-          </div>
-          <p className="text-xs text-gray-600">Sorted by planned start</p>
-        </div>
-
-        {loading ? (
-          <div className="p-10 text-center text-gray-500 text-sm">Loading activities...</div>
-        ) : !activities || activities.items.length === 0 ? (
-          <div className="p-12 text-center text-gray-500 text-sm space-y-3">
-            <Calendar className="w-10 h-10 text-gray-600 mx-auto" />
-            <p className="text-base text-gray-300 font-medium">No schedule activities found</p>
-            <p className="text-sm text-gray-500 max-w-md mx-auto">
-              Import a Primavera P6 (.xer) file or a schedule spreadsheet (.csv, .xlsx) to load plan activities and begin tracking progress.
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 transition-colors"
-            >
-              <Upload className="w-4 h-4" />
-              Import Schedule File
-            </button>
-          </div>
-        ) : (
-          <table className="w-full text-xs">
-            <thead className="bg-gray-800/40 border-b border-gray-800">
-              <tr className="text-gray-500 uppercase tracking-wide">
-                <th className="text-left px-4 py-3 font-medium">ID</th>
-                <th className="text-left px-4 py-3 font-medium">Activity Name</th>
-                <th className="text-left px-4 py-3 font-medium">Discipline</th>
-                <th className="text-left px-4 py-3 font-medium">Planned Start</th>
-                <th className="text-left px-4 py-3 font-medium">Planned Finish</th>
-                <th className="text-left px-4 py-3 font-medium">Actuals</th>
-                <th className="text-left px-4 py-3 font-medium">Type</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800/40">
-              {activities.items.map((act) => (
-                <tr key={act.id} className="hover:bg-gray-800/30 transition-colors">
-                  <td className="px-4 py-3 font-mono text-gray-500 text-[11px]">{act.activity_id}</td>
-                  <td className="px-4 py-3 text-gray-200 max-w-[250px]">
-                    <p className="truncate">{act.activity_name}</p>
-                    {act.wbs_code && <p className="text-gray-700 text-[10px]">{act.wbs_code}</p>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <DisciplineChip discipline={act.discipline || "unknown"} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {act.planned_start ? new Date(act.planned_start).toLocaleDateString() : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">
-                    {act.planned_finish ? new Date(act.planned_finish).toLocaleDateString() : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {act.actual_start || act.actual_percent_complete !== null ? (
-                      <div className="flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3 text-emerald-500" />
-                        <span className="text-emerald-400">
-                          {act.actual_percent_complete !== null
-                            ? `${act.actual_percent_complete}%`
-                            : "Started"}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-700">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {act.is_field_confirmed ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                        Field-Confirmed
-                      </span>
-                    ) : (
-                      <span className="text-gray-700 text-[10px]">XER</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {/* Activity Slide-Out Detail Panel */}
+      <ActivityDetailPanel
+        activity={selectedActivity}
+        onClose={() => setSelectedActivity(null)}
+        onActivityUpdated={loadActivities}
+      />
     </div>
+  );
+}
+
+export default function SchedulePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-xs text-slate-400 font-sans">Loading schedule...</div>}>
+      <ScheduleContent />
+    </Suspense>
   );
 }

@@ -1,335 +1,521 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
-import type { ProgressEvent, ProgressEventList } from "@/lib/types";
-import { ConfidenceBadge, DisciplineChip, ConfidenceBar } from "@/components/ConfidenceBadge";
-import { CheckCircle, XCircle, Edit3, PlusCircle, ChevronRight, AlertTriangle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import {
+  CheckCircle2,
+  XCircle,
+  Edit3,
+  AlertTriangle,
+  RefreshCw,
+  BookOpen,
+  ListFilter,
+  Check,
+  X,
+  Clock,
+  Layers,
+} from "lucide-react";
+import { apiFetch, fetchAliases, decideAlias } from "@/lib/api";
+import type { EntityAlias, ProgressEvent, ProgressEventList } from "@/lib/types";
+import ProvenanceBadge from "@/components/ProvenanceBadge";
 
 export default function ReviewQueuePage() {
-  const [queue, setQueue] = useState<ProgressEventList | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<ProgressEvent | null>(null);
-  const [action, setAction] = useState<"accept" | "edit" | "decline" | "confirm_new" | null>(null);
-  const [notes, setNotes] = useState("");
-  const [correctedId, setCorrectedId] = useState("");
-  const [newActivityName, setNewActivityName] = useState("");
-  const [newDiscipline, setNewDiscipline] = useState("unknown");
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<"events" | "terminology">("events");
 
-  async function loadQueue() {
-    setLoading(true);
+  // Tab 1: Progress Events
+  const [queue, setQueue] = useState<ProgressEventList | null>(null);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<ProgressEvent | null>(null);
+  const [action, setAction] = useState<"accept" | "edit" | "decline" | null>(null);
+  const [correctedId, setCorrectedId] = useState("");
+  const [actionNotes, setActionNotes] = useState("");
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [eventMessage, setEventMessage] = useState("");
+
+  // Tab 2: Terminology Proposals
+  const [aliases, setAliases] = useState<EntityAlias[]>([]);
+  const [loadingAliases, setLoadingAliases] = useState(false);
+  const [aliasMessage, setAliasMessage] = useState("");
+
+  async function loadEventsQueue() {
+    setLoadingEvents(true);
     try {
-      const data = await apiFetch<ProgressEventList>("/api/v1/review/queue?page_size=20");
+      const data = await apiFetch<ProgressEventList>("/api/v1/review/queue?page_size=50");
       setQueue(data);
     } catch (e) {
       console.error(e);
     } finally {
-      setLoading(false);
+      setLoadingEvents(false);
+    }
+  }
+
+  async function loadProposedAliases() {
+    setLoadingAliases(true);
+    try {
+      const data = await fetchAliases("proposed");
+      setAliases(data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAliases(false);
     }
   }
 
   useEffect(() => {
-    loadQueue();
+    loadEventsQueue();
+    loadProposedAliases();
   }, []);
 
-  async function submitAction() {
-    if (!selected || !action) return;
-    setSubmitting(true);
-    setMessage("");
+  async function handleEventDecision() {
+    if (!selectedEvent || !action) return;
+    setSubmittingAction(true);
+    setEventMessage("");
     try {
       if (action === "accept") {
-        await apiFetch(`/api/v1/review/${selected.id}/accept`, {
+        await apiFetch(`/api/v1/review/${selectedEvent.id}/accept`, {
           method: "POST",
-          body: JSON.stringify({ notes }),
+          body: JSON.stringify({ notes: actionNotes }),
         });
-        setMessage(`✓ Accepted — actuals written to schedule.`);
+        setEventMessage("✓ Event accepted — actuals written to schedule.");
       } else if (action === "edit") {
-        if (!correctedId.trim()) { setMessage("Please enter a corrected activity ID."); setSubmitting(false); return; }
-        await apiFetch(`/api/v1/review/${selected.id}/edit`, {
+        if (!correctedId.trim()) {
+          setEventMessage("Please enter a valid activity ID.");
+          setSubmittingAction(false);
+          return;
+        }
+        await apiFetch(`/api/v1/review/${selectedEvent.id}/edit`, {
           method: "POST",
-          body: JSON.stringify({ corrected_activity_id: correctedId, notes }),
+          body: JSON.stringify({
+            corrected_activity_id: correctedId.trim(),
+            notes: actionNotes,
+          }),
         });
-        setMessage(`✓ Edited — matched to ${correctedId}.`);
+        setEventMessage(`✓ Match corrected to ${correctedId}.`);
       } else if (action === "decline") {
-        await apiFetch(`/api/v1/review/${selected.id}/decline`, {
+        await apiFetch(`/api/v1/review/${selectedEvent.id}/decline`, {
           method: "POST",
-          body: JSON.stringify({ notes }),
+          body: JSON.stringify({ notes: actionNotes }),
         });
-        setMessage("✓ Declined.");
-      } else if (action === "confirm_new") {
-        if (!newActivityName.trim()) { setMessage("Please enter the new activity name."); setSubmitting(false); return; }
-        await apiFetch(`/api/v1/review/${selected.id}/confirm_new`, {
-          method: "POST",
-          body: JSON.stringify({ activity_name: newActivityName, discipline: newDiscipline, notes }),
-        });
-        setMessage(`✓ Confirmed as new field activity. Added to plan and index.`);
+        setEventMessage("✓ Event declined.");
       }
-      // Reload queue after action
-      await loadQueue();
-      setSelected(null);
+
+      await loadEventsQueue();
+      setSelectedEvent(null);
       setAction(null);
-    } catch (e: unknown) {
-      setMessage(`Error: ${String(e)}`);
+      setActionNotes("");
+      setCorrectedId("");
+    } catch (err: unknown) {
+      setEventMessage(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(false);
+    }
+  }
+
+  async function handleAliasDecision(aliasId: string, decision: "approve" | "reject") {
+    try {
+      await decideAlias(aliasId, decision);
+      setAliasMessage(`✓ Terminology mapping ${decision}d.`);
+      setTimeout(() => setAliasMessage(""), 3000);
+      await loadProposedAliases();
+    } catch (err: unknown) {
+      setAliasMessage(`Failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   return (
-    <div className="p-6 space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold gradient-text">Review Queue</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Events requiring human planner review, sorted by lowest confidence first.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        {/* Queue List */}
-        <div className="lg:col-span-2 space-y-2">
-          {loading ? (
-            <p className="text-sm text-gray-500 py-4">Loading queue...</p>
-          ) : !queue || queue.total === 0 ? (
-            <div className="glass-card p-6 text-center">
-              <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
-              <p className="text-sm text-gray-400">All caught up! No events pending review.</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-gray-600 font-medium">{queue.total} events pending</p>
-              {queue.items.map((ev) => (
-                <button
-                  key={ev.id}
-                  onClick={() => { setSelected(ev); setAction(null); setMessage(""); }}
-                  className={`w-full text-left p-3 rounded-xl border transition-all duration-150 ${
-                    selected?.id === ev.id
-                      ? "bg-violet-500/10 border-violet-500/40"
-                      : "glass-card hover:bg-gray-800/60 border-gray-800/60"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-200 truncate font-medium">
-                        {ev.activity_description_extracted || "(no description)"}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <DisciplineChip discipline={ev.discipline} />
-                        <ConfidenceBadge score={null} status={ev.match_status} />
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-600 flex-shrink-0 mt-0.5" />
-                  </div>
-                  <div className="mt-2">
-                    <ConfidenceBar score={ev.confidence_score} />
-                  </div>
-                </button>
-              ))}
-            </>
-          )}
+    <div className="p-6 max-w-7xl mx-auto space-y-5 font-sans">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-100">
+              Planner Review &amp; Quality Gate
+            </h1>
+            <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-800/60">
+              Human-in-the-Loop
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Confidence-gated field events and terminology normalization proposals requiring planner confirmation.
+          </p>
         </div>
 
-        {/* Review Panel */}
-        <div className="lg:col-span-3">
-          {!selected ? (
-            <div className="glass-card p-8 text-center h-full flex flex-col items-center justify-center">
-              <AlertTriangle className="w-10 h-10 text-amber-500/40 mb-3" />
-              <p className="text-sm text-gray-500">Select an event from the queue to review it.</p>
+        {/* Tab Switcher */}
+        <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg">
+          <button
+            onClick={() => setActiveTab("events")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              activeTab === "events"
+                ? "bg-cyan-600 text-slate-950 font-semibold"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <ListFilter className="w-3.5 h-3.5" />
+            Field Events ({queue?.total || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab("terminology")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              activeTab === "terminology"
+                ? "bg-cyan-600 text-slate-950 font-semibold"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Terminology Proposals ({aliases.length})
+          </button>
+        </div>
+      </div>
+
+      {/* TAB 1: FIELD PROGRESS EVENTS REVIEW */}
+      {activeTab === "events" && (
+        <div className="space-y-4">
+          {eventMessage && (
+            <div className={`p-2.5 rounded text-xs flex items-center gap-2 border font-mono ${
+              eventMessage.startsWith("✓")
+                ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
+                : "bg-rose-950/60 border-rose-800/60 text-rose-400"
+            }`}>
+              <span>{eventMessage}</span>
             </div>
-          ) : (
-            <div className="glass-card p-5 space-y-5">
-              {/* Event Details */}
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {selected.activity_description_extracted}
-                    </p>
-                    {selected.location_reference && (
-                      <p className="text-xs text-gray-500 mt-0.5">{selected.location_reference}</p>
-                    )}
-                  </div>
-                  <DisciplineChip discipline={selected.discipline} />
-                </div>
+          )}
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-gray-600 uppercase tracking-wide">Best Match</span>
-                    <p className="text-gray-300 mt-0.5 font-mono text-[11px]">
-                      {selected.activity_id_plan || "—"}
-                    </p>
-                    <p className="text-gray-500 truncate">{selected.activity_name_plan}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 uppercase tracking-wide">Confidence</span>
-                    <div className="mt-1">
-                      <ConfidenceBar score={selected.confidence_score} />
-                      <ConfidenceBadge score={null} status={selected.match_status} />
-                    </div>
-                  </div>
-                  {selected.actual_start_datetime && (
-                    <div>
-                      <span className="text-gray-600 uppercase tracking-wide">Actual Start</span>
-                      <p className="text-gray-300 mt-0.5">
-                        {new Date(selected.actual_start_datetime).toLocaleString()}
-                      </p>
-                    </div>
-                  )}
-                  {selected.percent_complete !== null && (
-                    <div>
-                      <span className="text-gray-600 uppercase tracking-wide">% Complete</span>
-                      <p className="text-gray-300 mt-0.5">{selected.percent_complete}%</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Match candidates */}
-                {selected.match_candidates && selected.match_candidates.length > 0 && (
-                  <div>
-                    <p className="text-xs text-gray-600 uppercase tracking-wide mb-2">Match Candidates</p>
-                    <div className="space-y-1">
-                      {selected.match_candidates.slice(0, 5).map((c) => (
-                        <div
-                          key={c.candidate_activity_id}
-                          className={`flex items-center justify-between px-3 py-1.5 rounded text-xs ${
-                            c.was_selected ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-gray-800/50"
-                          }`}
-                        >
-                          <span className="text-gray-300 font-mono text-[11px]">{c.candidate_activity_id}</span>
-                          <span className="text-gray-500 max-w-[140px] truncate">{c.activity_name}</span>
-                          <span className="text-gray-400 tabular-nums">
-                            {c.final_score !== null ? `${(c.final_score * 100).toFixed(0)}%` : "—"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Table: Rapid Action Table */}
+            <div className="lg:col-span-8 pm-card overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  Events Awaiting Confirmation ({queue?.total || 0})
+                </span>
+                <button
+                  onClick={loadEventsQueue}
+                  disabled={loadingEvents}
+                  className="p-1 text-slate-400 hover:text-slate-200"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingEvents ? "animate-spin text-cyan-400" : ""}`} />
+                </button>
               </div>
 
-              <div className="border-t border-gray-800 pt-4">
-                {/* Action Buttons */}
-                {!action && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setAction("accept")}
-                      className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors text-sm font-medium"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      Accept
-                    </button>
-                    <button
-                      onClick={() => setAction("edit")}
-                      className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 transition-colors text-sm font-medium"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                      Edit Match
-                    </button>
-                    <button
-                      onClick={() => setAction("confirm_new")}
-                      className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-violet-500/15 text-violet-400 border border-violet-500/30 hover:bg-violet-500/25 transition-colors text-sm font-medium"
-                    >
-                      <PlusCircle className="w-4 h-4" />
-                      New Activity
-                    </button>
-                    <button
-                      onClick={() => setAction("decline")}
-                      className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gray-800/80 text-gray-400 border border-gray-700 hover:bg-gray-700 transition-colors text-sm font-medium"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Decline
-                    </button>
-                  </div>
-                )}
+              <div className="overflow-x-auto">
+                <table className="pm-table">
+                  <thead>
+                    <tr>
+                      <th>Source Update Text</th>
+                      <th>Candidate Match</th>
+                      <th>Tier</th>
+                      <th>Provenance</th>
+                      <th>Reported Details</th>
+                      <th className="text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingEvents ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
+                          Loading review queue...
+                        </td>
+                      </tr>
+                    ) : !queue || queue.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
+                          All caught up! No events currently pending review.
+                        </td>
+                      </tr>
+                    ) : (
+                      queue.items.map((ev) => {
+                        const isSelected = selectedEvent?.id === ev.id;
+                        return (
+                          <tr
+                            key={ev.id}
+                            onClick={() => {
+                              setSelectedEvent(ev);
+                              setAction(null);
+                              setEventMessage("");
+                            }}
+                            className={`cursor-pointer ${
+                              isSelected ? "bg-cyan-950/40 border-l-2 border-l-cyan-400" : ""
+                            }`}
+                          >
+                            <td className="max-w-xs">
+                              <p className="font-medium text-slate-200 line-clamp-2">
+                                {ev.activity_description_extracted || ev.activity_description_raw}
+                              </p>
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">
+                                {ev.actual_start_datetime ? ev.actual_start_datetime.substring(0, 10) : "Not reported"}
+                              </span>
+                            </td>
 
-                {/* Action Form */}
-                {action && (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium text-white capitalize">
-                      {action.replace("_", " ")} Event
+                            <td className="font-mono text-xs whitespace-nowrap">
+                              {ev.activity_id_plan ? (
+                                <span className="text-cyan-400 font-semibold">{ev.activity_id_plan}</span>
+                              ) : (
+                                <span className="text-amber-400 text-[11px]">Unmatched</span>
+                              )}
+                            </td>
+
+                            <td>
+                              <span
+                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                  (ev.confidence_score ?? 0.8) >= 0.85
+                                    ? "badge-tier-high"
+                                    : (ev.confidence_score ?? 0.8) >= 0.65
+                                    ? "badge-tier-medium"
+                                    : "badge-tier-low"
+                                }`}
+                              >
+                                {ev.confidence_tier?.toUpperCase() || "MED"}
+                              </span>
+                            </td>
+
+                            <td>
+                              <ProvenanceBadge category={ev.provenance_category || "ai_extraction"} />
+                            </td>
+
+                            <td className="text-[11px] text-slate-400">
+                              <div className="space-y-0.5">
+                                <div>Loc: <span className="text-slate-200">{ev.location_area || ev.location_reference || "Not reported"}</span></div>
+                                <div>Tag: <span className="text-slate-200 font-mono">{ev.equipment_tag || "Not reported"}</span></div>
+                                <div>Progress: <span className="text-slate-200 font-mono">{ev.percent_complete != null ? `${ev.percent_complete}%` : "Not reported"}</span></div>
+                              </div>
+                            </td>
+
+                            <td className="text-right">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedEvent(ev);
+                                  setAction("accept");
+                                }}
+                                className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-600/40 text-xs font-medium"
+                              >
+                                Quick Accept
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Event Review Action Drawer */}
+            <div className="lg:col-span-4 pm-card p-4 space-y-4">
+              <div className="border-b border-slate-800 pb-2">
+                <h2 className="text-xs font-semibold text-slate-100 uppercase tracking-wider font-mono">
+                  Planner Decision Panel
+                </h2>
+              </div>
+
+              {!selectedEvent ? (
+                <div className="py-12 text-center text-xs text-slate-400">
+                  Select any event from the table to review evidence, candidates, and confirm match.
+                </div>
+              ) : (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <p className="text-[11px] text-slate-400 font-mono uppercase">Raw Field Message:</p>
+                    <p className="mt-1 p-2 rounded bg-slate-900 border border-slate-800 text-slate-200 text-xs leading-relaxed">
+                      {selectedEvent.activity_description_raw || selectedEvent.activity_description_extracted}
                     </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-400">Discipline:</span>
+                      <p className="font-semibold text-slate-200">{String(selectedEvent.discipline).toUpperCase()}</p>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-400">Confidence:</span>
+                      <p className="font-semibold text-cyan-400 font-mono">
+                        {Math.round((selectedEvent.confidence_score ?? 0.8) * 100)}%
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Decision Action Form */}
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <p className="text-[11px] font-mono text-slate-400 uppercase">Select Planner Action:</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        onClick={() => setAction("accept")}
+                        className={`py-1.5 rounded text-xs font-medium border transition-colors ${
+                          action === "accept"
+                            ? "bg-emerald-600 text-slate-950 font-bold border-emerald-500"
+                            : "bg-emerald-950/40 text-emerald-400 border-emerald-800/60 hover:bg-emerald-950/70"
+                        }`}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAction("edit");
+                          setCorrectedId(selectedEvent.activity_id_plan || "");
+                        }}
+                        className={`py-1.5 rounded text-xs font-medium border transition-colors ${
+                          action === "edit"
+                            ? "bg-cyan-600 text-slate-950 font-bold border-cyan-500"
+                            : "bg-cyan-950/40 text-cyan-400 border-cyan-800/60 hover:bg-cyan-950/70"
+                        }`}
+                      >
+                        Change Match
+                      </button>
+                      <button
+                        onClick={() => setAction("decline")}
+                        className={`py-1.5 rounded text-xs font-medium border transition-colors ${
+                          action === "decline"
+                            ? "bg-rose-600 text-slate-950 font-bold border-rose-500"
+                            : "bg-rose-950/40 text-rose-400 border-rose-800/60 hover:bg-rose-950/70"
+                        }`}
+                      >
+                        Reject
+                      </button>
+                    </div>
 
                     {action === "edit" && (
-                      <div>
-                        <label className="text-xs text-gray-500 block mb-1">Corrected Activity ID *</label>
+                      <div className="pt-2">
+                        <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                          Corrected Activity ID (Primavera P6):
+                        </label>
                         <input
                           type="text"
                           value={correctedId}
                           onChange={(e) => setCorrectedId(e.target.value)}
-                          placeholder="e.g. PIP-002"
-                          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
+                          placeholder="e.g., PIP-002"
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
                         />
                       </div>
                     )}
 
-                    {action === "confirm_new" && (
-                      <div className="space-y-2">
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">New Activity Name *</label>
-                          <input
-                            type="text"
-                            value={newActivityName}
-                            onChange={(e) => setNewActivityName(e.target.value)}
-                            placeholder="Descriptive activity name"
-                            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">Discipline</label>
-                          <select
-                            value={newDiscipline}
-                            onChange={(e) => setNewDiscipline(e.target.value)}
-                            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-violet-500"
-                          >
-                            {["piping","civil","electrical","instrumentation","hse","structural","mechanical","unknown"].map(d => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
-                        </div>
+                    {action && (
+                      <div className="space-y-2 pt-2">
+                        <label className="block text-[11px] font-mono text-slate-400">
+                          Planner Review Notes (Audit Trail):
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={actionNotes}
+                          onChange={(e) => setActionNotes(e.target.value)}
+                          placeholder="Rationale for decision..."
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 focus:outline-none focus:border-cyan-500 resize-none"
+                        />
+
+                        <button
+                          onClick={handleEventDecision}
+                          disabled={submittingAction}
+                          className="w-full py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-semibold text-xs transition-colors disabled:opacity-50"
+                        >
+                          {submittingAction ? "Writing to schedule..." : "Submit Review Decision"}
+                        </button>
                       </div>
                     )}
-
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">Notes (optional)</label>
-                      <textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                        rows={2}
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 resize-none"
-                        placeholder="Optional notes..."
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={submitAction}
-                        disabled={submitting}
-                        className="flex-1 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors"
-                      >
-                        {submitting ? "Submitting..." : "Confirm"}
-                      </button>
-                      <button
-                        onClick={() => { setAction(null); setMessage(""); }}
-                        className="px-4 py-2 rounded-lg bg-gray-800 text-gray-400 text-sm hover:bg-gray-700 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-
-                    {message && (
-                      <p className={`text-sm ${message.startsWith("✓") ? "text-emerald-400" : "text-rose-400"}`}>
-                        {message}
-                      </p>
-                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: TERMINOLOGY PROPOSALS (HUMAN-GATED VOCABULARY LEARNING) */}
+      {activeTab === "terminology" && (
+        <div className="space-y-4">
+          <div className="p-3 rounded bg-slate-900/80 border border-slate-800 text-xs text-slate-300">
+            <span className="font-semibold text-cyan-400">Human-Gated Terminology Learning:</span>{" "}
+            Unrecognized site jargon and local terminology detected in field updates are proposed here.
+            They are <span className="underline">never</span> automatically added into canonical matching dictionaries without explicit human planner approval.
+          </div>
+
+          {aliasMessage && (
+            <div className={`p-2.5 rounded text-xs flex items-center gap-2 border font-mono ${
+              aliasMessage.startsWith("✓")
+                ? "bg-emerald-950/60 border-emerald-800/60 text-emerald-400"
+                : "bg-rose-950/60 border-rose-800/60 text-rose-400"
+            }`}>
+              <span>{aliasMessage}</span>
             </div>
           )}
+
+          <div className="pm-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="pm-table">
+                <thead>
+                  <tr>
+                    <th>Unrecognized Field Term</th>
+                    <th>Suggested Canonical Name</th>
+                    <th>Category</th>
+                    <th>Frequency</th>
+                    <th>Sample Source Context</th>
+                    <th>Proposed By</th>
+                    <th className="text-right">Human Decision</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingAliases ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-slate-400">
+                        Loading terminology proposals...
+                      </td>
+                    </tr>
+                  ) : aliases.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-slate-400">
+                        No pending terminology proposals. Controlled vocabulary is synchronized.
+                      </td>
+                    </tr>
+                  ) : (
+                    aliases.map((al) => (
+                      <tr key={al.id}>
+                        <td className="font-mono text-cyan-400 font-semibold text-xs whitespace-nowrap">
+                          {al.raw_alias}
+                        </td>
+                        <td className="font-semibold text-slate-200 text-xs whitespace-nowrap">
+                          {al.canonical_name}
+                        </td>
+                        <td>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                            {al.entity_type.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="font-mono text-xs text-slate-300">
+                          {al.frequency} report{al.frequency === 1 ? "" : "s"}
+                        </td>
+                        <td className="text-xs text-slate-400 max-w-sm truncate">
+                          {al.sample_text || "Field WhatsApp message"}
+                        </td>
+                        <td className="text-[11px] text-slate-400 font-mono">
+                          {al.proposed_by}
+                        </td>
+                        <td className="text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleAliasDecision(al.id, "approve")}
+                              className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-600/40 text-xs font-medium flex items-center gap-1"
+                              title="Approve and add to system controlled vocabulary"
+                            >
+                              <Check className="w-3 h-3" />
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleAliasDecision(al.id, "reject")}
+                              className="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-600/40 text-xs font-medium flex items-center gap-1"
+                              title="Reject alias mapping"
+                            >
+                              <X className="w-3 h-3" />
+                              Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
