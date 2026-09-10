@@ -57,6 +57,64 @@ Ensure your host machine or VM has:
 * **Docker & Docker Compose**: Installed and running ([docker.com](https://www.docker.com/)).
 * **Recommended Specs**: 4 vCPU cores, 8 GB+ RAM.
 
+### Prerequisites
+- Docker Desktop
+- A Groq API key (free tier at console.groq.com)
+
+### 1. Configure environment
+
+```bash
+cp .env.example .env
+# Edit .env — add your GROQ_API_KEY at minimum
+```
+
+### 2. Start services
+
+```bash
+docker-compose up -d --build
+```
+*(Note: If you are pulling new changes from a teammate's fork, ensure you include `--build` to rebuild the frontend UI container.)*
+
+Services started:
+| Service | URL |
+|---|---|
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
+| MinIO Console | http://localhost:9001 (admin/minioadmin) |
+| FastAPI Backend | http://localhost:8000 |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| Next.js Dashboard | http://localhost:3000 |
+
+### 3. Initialize the database
+
+```bash
+# In the backend container (or with Python + venv):
+cd backend
+alembic upgrade head
+```
+
+### 4. Seed synthetic schedule & demo data
+
+```bash
+python scratch/drop_tables.py      # Clears existing data
+python scripts/seed_schedule.py    # Loads schedule & shifts dates
+python scripts/seed_demo_events.py # Seeds review queue for UI demo
+```
+
+This loads synthetic L5/L6 plan activities (shifted to August 2026), builds the semantic embedding index, and populates the UI with realistic events.
+
+### 5. Run the end-to-end simulation (Optional)
+
+```bash
+python scripts/run_demo.py
+```
+
+Injects 3 synthetic messages (free text, XLSX, scanned diary simulation), runs the full pipeline, and adds to the review queue.
+
+### 6. Open the reviewer dashboard
+
+Navigate to **http://localhost:3000** to view the unified dashboard.
+
 ---
 
 ## 🚀 Step-by-Step Setup Guide
