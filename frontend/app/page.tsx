@@ -72,6 +72,7 @@ export default function DashboardPage() {
   const [reviewCollapsed, setReviewCollapsed] = useState(false);
   const [ingestionCollapsed, setIngestionCollapsed] = useState(false);
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
+  const [memoryCollapsed, setMemoryCollapsed] = useState(false);
   const [timeline, setTimeline] = useState<ReturnType<typeof buildTimeline> | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const ganttScrollRef = useRef<HTMLDivElement>(null);
@@ -535,6 +536,26 @@ export default function DashboardPage() {
                 <div style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "9px 10px", fontSize: 11.5, color: "var(--ai-text)" }}>
                   Check critical path — {activities.filter(a => a.is_critical).length} activities at risk of float exhaustion.
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Institutional Memory section */}
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: memoryCollapsed ? "0 0 auto" : "0 1 120px", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: memoryCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
+              <button onClick={() => setMemoryCollapsed(!memoryCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {memoryCollapsed ? "▶" : "▾"}
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Institutional Memory</span>
+            </div>
+            {!memoryCollapsed && (
+              <div style={{ overflow: "hidden", flex: "1 1 auto", padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px" }}>
+                  Export dataset of validated events for predictive analysis.
+                </div>
+                <button onClick={() => window.open(`${API_BASE}/api/v1/memory/export`, '_blank')} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
+                  Download Dataset
+                </button>
               </div>
             )}
           </div>
