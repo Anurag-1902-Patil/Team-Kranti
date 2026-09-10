@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kranti P1 — Project Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ---- core palette: "blueprint" — engineering-drawing navy + safety-amber ---- */
+    --bg:#eef1f6;
+    --surface:#ffffff;
+    --surface-alt:#f6f8fb;
+    --border:#e0e5ec;
+    --border-strong:#ccd3e0;
+    --ink:#101826;
+    --ink-soft:#525c6e;
+    --muted:#8b93a3;
+    --accent:#d9822b;
+    --accent-soft:#fbeadb;
+    --accent-ink:#8a5316;
+    --success:#2f9e63;
+    --success-soft:#e5f6ec;
+    --danger:#e0574c;
+    --danger-soft:#fdecea;
+    --info:#2f6fed;
+
+    /* ---- Kranti AI: same neutral black/white minimal family as the rest of the UI ---- */
+    --ai-bg:#fafafa;
+    --ai-surface:#ffffff;
+    --ai-surface2:#f7f7f7;
+    --ai-surface3:#eeeeee;
+    --ai-border:#e2e2e2;
+    --ai-border-strong:#cfcfcf;
+    --ai-text:#111111;
+    --ai-text-soft:#6b6b6b;
+    --ai-muted:#9a9a9a;
+
+    --radius-lg:14px;
+    --radius-md:10px;
+    --radius-sm:7px;
+    --shadow:0 1px 2px rgba(16,24,38,.04), 0 6px 20px rgba(16,24,38,.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{ margin:0;padding:0;height:100%; }
+  body{
+    font-family:"IBM Plex Sans",Arial,sans-serif;
+    color:var(--ink);
+    background:var(--bg);
+    height:100vh;
+    min-height:660px;
+    overflow:hidden;
+  }
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb{ background:#c7cedb; border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  .ai-frame ::-webkit-scrollbar-thumb{ background:#cfcfcf; }
+  .mono{ font-family:"IBM Plex Mono",monospace; }
+
+  /* ============ VIEW ROUTER ============ */
+  .view{ display:none; width:100%; height:100vh; }
+  .view.active{ display:flex; }
+  #view-dashboard.active{ padding:16px; gap:16px; align-items:stretch; }
+  #view-auth.active, #view-navigator.active{ align-items:center; justify-content:center; }
+
+  /* ============ AUTH SCREEN ============ */
+  #view-auth{ background:var(--bg); }
+  .auth-card{
+    position:relative; width:860px; max-width:94vw; min-height:540px;
+    background:var(--surface); border-radius:var(--radius-lg); overflow:hidden;
+    box-shadow:0 2px 4px rgba(16,24,38,.05), 0 24px 60px rgba(16,24,38,.14);
+  }
+  .auth-form-panel{ position:absolute; top:0; height:100%; width:50%; left:0; transition:all .6s ease-in-out; }
+  .sign-up-panel{ opacity:0; z-index:1; }
+  .sign-in-panel{ z-index:2; }
+  .auth-card.right-active .sign-in-panel{ transform:translateX(100%); }
+  .auth-card.right-active .sign-up-panel{ transform:translateX(100%); opacity:1; z-index:5; }
+  .auth-form{
+    display:flex; flex-direction:column; height:100%; justify-content:center;
+    padding:0 52px; gap:12px;
+  }
+  .auth-form h2{ font-size:22px; font-weight:600; margin:0 0 4px; letter-spacing:.1px; }
+  .auth-sub{ font-size:12.5px; color:var(--muted); margin:0 0 6px; }
+  .auth-google{
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    font-family:inherit; font-size:12.5px; font-weight:600; color:var(--ink-soft);
+    background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-sm);
+    padding:10px; cursor:pointer; margin-top:2px;
+  }
+  .auth-google:hover{ background:var(--surface-alt); }
+  .auth-google .g-mark{
+    width:16px;height:16px;border-radius:50%;background:var(--ink);color:#fff;
+    font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  }
+  .auth-field{
+    display:flex; align-items:center; gap:9px;
+    border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--surface-alt); padding:10px 12px;
+  }
+  .auth-field:focus-within{ border-color:var(--ink-soft); background:var(--surface); }
+  .auth-field .auth-icon{ display:inline-flex; align-items:center; justify-content:center; color:var(--muted); flex:0 0 auto; }
+  .auth-field .auth-icon svg{ display:block; }
+  .auth-field input{
+    border:none; background:transparent; outline:none; font-family:inherit;
+    font-size:13px; color:var(--ink); width:100%;
+  }
+  .auth-link{ align-self:flex-end; font-size:11.5px; color:var(--ink-soft); text-decoration:none; margin-top:-4px; }
+  .auth-link:hover{ color:var(--ink); text-decoration:underline; }
+  .auth-submit{
+    margin-top:8px; font-family:inherit; font-size:13px; font-weight:600; color:#fff;
+    background:var(--ink); border:none; border-radius:var(--radius-sm); padding:12px; cursor:pointer;
+    transition:background .12s ease;
+  }
+  .auth-submit:hover{ background:#000; }
+
+  .auth-overlay-container{
+    position:absolute; top:0; left:50%; width:50%; height:100%; overflow:hidden;
+    transition:transform .6s ease-in-out; z-index:100;
+  }
+  .auth-card.right-active .auth-overlay-container{ transform:translateX(-100%); }
+  .auth-overlay{
+    position:relative; left:-100%; height:100%; width:200%;
+    background:linear-gradient(155deg,#101826 0%,#1c2636 100%);
+    color:#fff; transform:translateX(0); transition:transform .6s ease-in-out;
+  }
+  .auth-card.right-active .auth-overlay{ transform:translateX(50%); }
+  .auth-overlay-panel{
+    position:absolute; top:0; width:50%; height:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:0 42px; text-align:center; transition:transform .6s ease-in-out;
+  }
+  .overlay-left{ left:0; transform:translateX(-20%); }
+  .auth-card.right-active .overlay-left{ transform:translateX(0); }
+  .overlay-right{ right:0; transform:translateX(0); }
+  .auth-card.right-active .overlay-right{ transform:translateX(20%); }
+  .auth-overlay-panel .brand-mark{
+    width:14px;height:14px;background:var(--accent); border-radius:3px; transform:rotate(45deg); margin-bottom:18px;
+  }
+  .auth-overlay-panel h2{ font-size:20px; font-weight:600; margin:0 0 12px; }
+  .auth-overlay-panel p{ font-size:12.5px; line-height:1.6; color:#c7cedc; margin:0 0 22px; }
+  .auth-ghost-btn{
+    font-family:inherit; font-size:12px; font-weight:600; color:#fff;
+    background:transparent; border:1px solid rgba(255,255,255,.5); border-radius:20px;
+    padding:10px 30px; cursor:pointer; transition:background .15s ease, border-color .15s ease;
+  }
+  .auth-ghost-btn:hover{ background:rgba(255,255,255,.1); border-color:var(--accent); }
+
+  /* ============ NAVIGATOR SCREEN ============ */
+  #view-navigator{ background:#12161d; }
+  .nav-card{
+    width:420px; max-width:92vw; background:#1a1f29; border:1px solid #2a3140;
+    border-radius:var(--radius-lg); padding:26px 24px 20px; box-shadow:0 24px 60px rgba(0,0,0,.35);
+  }
+  .nav-title{ color:#fff; font-size:16px; font-weight:600; text-align:center; margin:4px 0 20px; }
+  .nav-options{ display:flex; flex-direction:column; gap:10px; }
+  .nav-option{
+    display:flex; align-items:center; gap:13px; width:100%; text-align:left;
+    background:#232936; border:1px solid #2f3646; border-radius:var(--radius-md);
+    padding:12px 14px; cursor:pointer; transition:background .12s ease, border-color .12s ease;
+  }
+  .nav-option:hover{ background:#282f3d; border-color:#3a4257; }
+  .nav-option .nav-icon{
+    flex:0 0 auto; width:34px; height:34px; border-radius:9px;
+    background:#333c4d; color:#dbe1ec; display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .nav-option.featured .nav-icon{ background:var(--accent); color:#1a1206; }
+  .nav-text{ display:flex; flex-direction:column; gap:2px; }
+  .nav-text strong{ color:#f2f4f8; font-size:13px; font-weight:600; }
+  .nav-text small{ color:#8b93a3; font-size:11px; }
+  .nav-signout{
+    margin:18px auto 2px; display:block; background:none; border:none; cursor:pointer;
+    font-family:inherit; font-size:11.5px; color:#6b7385; padding:4px;
+  }
+  .nav-signout:hover{ color:#c7cedc; }
+
+  /* ============ TITLEBAR NAV CONTROL ============ */
+  .titlebar-back{
+    margin-left:auto; font-family:inherit; font-size:11.5px; font-weight:500;
+    color:var(--ink-soft); background:var(--surface-alt); border:1px solid var(--border);
+    border-radius:20px; padding:6px 13px; cursor:pointer; display:flex; align-items:center; gap:6px;
+  }
+  .titlebar-back:hover{ background:var(--border); color:var(--ink); }
+
+  /* ============ REVIEW QUEUE DRAWER ============ */
+  .expand-btn{
+    width:20px;height:20px;flex:0 0 auto; margin-left:4px;
+    border:none;background:transparent;color:var(--ai-text-soft);
+    font-size:13px; cursor:pointer; border-radius:5px;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .12s ease, color .12s ease;
+  }
+  .expand-btn:hover{ background:var(--ai-surface3); color:var(--ai-text); }
+  .drawer-overlay{
+    position:fixed; inset:0; background:rgba(16,24,38,.4);
+    display:flex; justify-content:flex-end;
+    opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:500;
+  }
+  .drawer-overlay.open{ opacity:1; pointer-events:auto; }
+  .review-drawer{
+    width:min(1000px,92vw); height:100%; background:var(--surface);
+    box-shadow:-10px 0 34px rgba(16,24,38,.2);
+    transform:translateX(100%); transition:transform .32s cubic-bezier(.22,.9,.32,1);
+    display:flex; flex-direction:column;
+  }
+  .drawer-overlay.open .review-drawer{ transform:translateX(0); }
+  .drawer-header{
+    display:flex; align-items:flex-start; justify-content:space-between;
+    padding:22px 28px; border-bottom:1px solid var(--border); flex:0 0 auto;
+  }
+  .drawer-header-title{ display:flex; align-items:center; gap:10px; }
+  .drawer-header-title .brand-mark{ width:11px;height:11px;background:var(--accent); border-radius:3px; transform:rotate(45deg); }
+  .drawer-header h2{ margin:0; font-size:18px; font-weight:600; }
+  .drawer-sub{ margin:4px 0 0; font-size:12px; color:var(--muted); }
+  .drawer-close{
+    border:none; background:var(--surface-alt); width:32px;height:32px;border-radius:9px;
+    font-size:19px; line-height:1; cursor:pointer; color:var(--ink-soft);
+  }
+  .drawer-close:hover{ background:var(--border); color:var(--ink); }
+  .drawer-body{ flex:1 1 auto; display:flex; min-height:0; }
+  .drawer-list{ width:360px; flex:0 0 360px; border-right:1px solid var(--border); overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  .drawer-detail{ flex:1 1 auto; overflow-y:auto; padding:30px 34px; }
+  .drawer-placeholder{ color:var(--muted); font-size:13px; text-align:center; margin-top:80px; }
+
+  .drawer-card{
+    background:var(--surface-alt); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:12px 13px; cursor:pointer; transition:border-color .12s ease, background .12s ease;
+  }
+  .drawer-card:hover{ border-color:var(--border-strong); background:#eef0f4; }
+  .drawer-card.active{ background:#fff; border-color:var(--ink); box-shadow:0 0 0 1px var(--ink) inset; }
+  .drawer-card.empty-placeholder{ opacity:.45; cursor:default; }
+  .drawer-card .row1{ display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .drawer-card .evt-id{ font-size:10.5px; font-weight:600; color:var(--muted); }
+  .drawer-card .tag{
+    margin-left:auto; font-size:9px; font-weight:600; color:var(--ink-soft);
+    background:var(--surface); border:1px solid var(--border); padding:2px 8px; border-radius:20px;
+  }
+  .drawer-card .preview{ font-size:12.5px; color:var(--ink); line-height:1.45; }
+
+  .status-chip{ font-size:9px; font-weight:600; padding:2px 8px; border-radius:20px; }
+  .status-chip.accepted{ background:var(--ink); color:#fff; }
+  .status-chip.declined{ background:var(--surface); color:var(--muted); border:1px solid var(--border-strong); }
+
+  .drawer-agent{ display:flex; flex-direction:column; gap:20px; max-width:640px; }
+  .message-text.big{ font-size:14px; padding:16px 18px; }
+  .activity-match.big{ padding:13px 15px; }
+  .confidence-bar.big{ height:8px; }
+  .agent-actions.big button{ font-size:13px; padding:11px 10px; }
+
+  /* ============ OUTER FRAMES ============ */
+  .frame{
+    border:1px solid var(--border);
+    border-radius:var(--radius-lg);
+    background:var(--surface);
+    box-shadow:var(--shadow);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+  .p1-frame{ flex:1 1 auto; min-width:0; }
+  .ai-frame{ width:300px; flex:0 0 300px; background:var(--ai-bg); border-color:var(--ai-border); }
+
+  .frame-titlebar{
+    display:flex;align-items:center;gap:9px;
+    padding:14px 18px;
+    border-bottom:1px solid var(--border);
+    flex:0 0 auto;
+  }
+  .frame-titlebar h1{
+    font-size:14.5px; font-weight:600; margin:0; letter-spacing:.1px;
+  }
+  .titlebar-mark{
+    width:9px;height:9px;border-radius:2px;
+    background:var(--accent);
+    display:inline-block;
+    transform:rotate(45deg);
+  }
+  .ai-frame .frame-titlebar{
+    background:var(--ai-bg); color:var(--ai-text); border-bottom-color:var(--ai-border);
+  }
+  .ai-frame .titlebar-mark{ background:var(--ai-text); }
+  .frame-titlebar .subtitle{
+    font-size:11px; color:var(--muted); font-weight:400; margin-left:2px;
+  }
+  .ai-frame .subtitle{ color:var(--ai-text-soft); }
+
+  /* ============ MENU BAR ============ */
+  .menubar{
+    display:flex;gap:2px;
+    padding:6px 12px;
+    border-bottom:1px solid var(--border);
+    background:var(--surface-alt);
+    flex:0 0 auto;
+  }
+  .menubar button{
+    font-family:inherit;font-size:12.5px;font-weight:500;
+    padding:6px 12px;
+    background:transparent;
+    color:var(--ink-soft);
+    border:none;
+    border-radius:var(--radius-sm);
+    cursor:default;
+  }
+  .menubar button:hover{ background:#e9edf3; color:var(--ink); }
+
+  /* ============ MAIN CONTENT: table + gantt ============ */
+  .main-row{
+    flex:1 1 auto;
+    display:flex;
+    min-height:0;
+    border-bottom:1px solid var(--border);
+  }
+
+  /* -------- Activity table -------- */
+  .activity-pane{
+    width:40%;
+    min-width:280px;
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+    min-height:0;
+  }
+  .pane-scroll{ overflow:auto; flex:1 1 auto; min-height:0; }
+  table.acttable{
+    border-collapse:collapse;
+    width:100%;
+    font-size:12px;
+    table-layout:fixed;
+  }
+  table.acttable th{
+    position:sticky;top:0;z-index:2;
+    background:var(--surface-alt);
+    border-bottom:1px solid var(--border-strong);
+    padding:8px 10px;
+    text-align:left;
+    font-weight:600;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+    letter-spacing:.4px;
+    white-space:nowrap;
+  }
+  table.acttable td{
+    border-bottom:1px solid var(--border);
+    padding:5px 10px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    height:26px;
+  }
+  table.acttable tbody tr{ cursor:pointer; transition:background .1s ease; }
+  table.acttable tbody tr:hover td{ background:#f4f6fa; }
+  table.acttable tbody tr.wbs td{ font-weight:600; }
+  table.acttable tbody tr.selected td{ background:var(--accent-soft) !important; }
+  table.acttable tbody tr.selected td:first-child{ box-shadow:inset 3px 0 0 var(--accent); }
+  .col-id{ width:64px; color:var(--muted); }
+  .col-dur{ width:42px; text-align:right; color:var(--ink-soft); }
+  .col-pct{ width:38px; text-align:right; color:var(--ink-soft); }
+  .name-cell{ display:flex; align-items:center; gap:6px; }
+  .icon{ flex:0 0 auto; width:12px; text-align:center; font-size:9px; color:var(--muted); }
+  .indent{ display:inline-block; }
+  .tree-toggle{
+    flex:0 0 auto; width:14px; height:14px; padding:0;
+    border:none; background:transparent; color:var(--ink-soft);
+    font-size:9px; line-height:1; cursor:pointer; border-radius:3px;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:transform .15s ease, background .12s ease;
+  }
+  .tree-toggle:hover{ background:var(--border); color:var(--ink); }
+  .tree-toggle.open{ transform:rotate(90deg); }
+  .tree-spacer{ flex:0 0 auto; width:14px; display:inline-block; }
+  .row-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* -------- Gantt pane -------- */
+  .gantt-pane{
+    flex:1 1 auto;
+    min-width:0;
+    display:flex;flex-direction:column;
+    background:var(--surface);
+  }
+  .gantt-scroll{ overflow:auto; flex:1 1 auto; min-height:0; position:relative; }
+  .gantt-inner{ position:relative; }
+  .gantt-header{ position:sticky;top:0;z-index:3; background:var(--surface-alt); }
+  .qtr-row, .month-row{ display:flex; }
+  .qtr-cell{
+    border-right:1px solid var(--border);
+    border-bottom:1px solid var(--border-strong);
+    font-size:10.5px;font-weight:600;color:var(--ink-soft);
+    text-align:center; padding:5px 0; white-space:nowrap;
+  }
+  .month-cell{
+    border-right:1px solid var(--border);
+    border-bottom:1px solid var(--border);
+    font-size:9.5px; text-align:center; color:var(--muted);
+    padding:3px 0;
+  }
+  .gantt-body{ position:relative; }
+  .gantt-row{ height:26px; position:relative; border-bottom:1px solid var(--border); }
+  .gantt-row.selected{ background:var(--accent-soft); }
+  .vgrid{ position:absolute; top:0; bottom:0; border-left:1px solid #eef0f4; }
+  .vgrid.qtr{ border-left:1px solid var(--border-strong); }
+
+  .bar{ position:absolute; top:7px; height:9px; background:var(--ink); border-radius:5px; }
+  .bar.summary{ top:11px; height:2px; background:var(--ink-soft); }
+  .bar.summary::before,.bar.summary::after{
+    content:"";position:absolute;top:-3px;width:0;height:0;
+    border-left:4px solid transparent;border-right:4px solid transparent;
+    border-top:6px solid var(--ink-soft);
+  }
+  .bar.summary::before{ left:-1px; } .bar.summary::after{ right:-1px; }
+  .diamond{
+    position:absolute; top:6px; width:10px;height:10px;
+    background:var(--accent); transform:rotate(45deg); border-radius:2px;
+  }
+  .square{
+    position:absolute; top:8px; width:8px;height:8px;
+    border:2px solid var(--info); background:#fff; border-radius:2px;
+  }
+  .bar-label{ position:absolute; top:5px; left:0; font-size:10.5px; color:var(--ink-soft); white-space:nowrap; padding-left:7px; }
+
+  /* ============ Details Space ============ */
+  .details-pane{ flex:1 1 auto; display:flex; flex-direction:column; min-height:0; }
+  .tabstrip{ display:flex; gap:4px; padding:8px 18px 0; border-bottom:1px solid var(--border); flex:0 0 auto; }
+  .tabstrip button{
+    font-family:inherit;font-size:12px;font-weight:500;
+    padding:7px 4px 9px; margin-right:14px;
+    background:none; color:var(--muted);
+    border:none; border-bottom:2px solid transparent;
+    cursor:default;
+  }
+  .tabstrip button.active{ color:var(--ink); border-bottom-color:var(--accent); font-weight:600; }
+  .details-body{ flex:1 1 auto; overflow:auto; padding:18px; }
+  .details-grid{
+    display:grid; grid-template-columns:140px 1fr 140px 1fr;
+    gap:10px 18px; max-width:780px; font-size:12.5px;
+  }
+  .details-grid label{ color:var(--muted); align-self:center; font-weight:500; }
+  .details-grid .field{
+    border:1px solid var(--border); border-radius:var(--radius-sm);
+    background:var(--surface-alt); padding:6px 10px; min-height:14px;
+  }
+  .details-empty{ color:var(--muted); font-size:12.5px; }
+
+  /* ============ AI Frame Sections ============ */
+  .ai-body{ flex:1 1 auto; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:10px; }
+  .ai-section{
+    background:var(--ai-surface);
+    border:1px solid var(--ai-border);
+    border-radius:var(--radius-md);
+    display:flex; flex-direction:column;
+    flex:0 0 auto;
+    overflow:hidden;
+  }
+  .ai-section.expanded{ flex:1 1 230px; min-height:170px; }
+  .ai-section-head{ display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid transparent; }
+  .ai-section.expanded .ai-section-head{ border-bottom-color:var(--ai-border); }
+  .collapse-btn{
+    width:20px;height:20px;flex:0 0 auto;
+    border:none;background:transparent;color:var(--ai-text-soft);
+    font-size:11px; cursor:pointer; border-radius:5px;
+    display:flex;align-items:center;justify-content:center;
+    transition:transform .15s ease, background .15s ease;
+  }
+  .collapse-btn:hover{ background:var(--ai-surface3); color:var(--ai-text); }
+  .section-title{ font-size:12.5px; font-weight:600; color:var(--ai-text); }
+  .section-count{
+    margin-left:auto; font-size:10.5px; color:var(--ai-text-soft);
+    background:var(--ai-surface3); padding:2px 8px; border-radius:20px;
+  }
+  .ai-section-content{ overflow:hidden; display:flex; flex-direction:column; padding:0 10px 10px; flex:1 1 auto; min-height:0; }
+  .ai-section.collapsed .ai-section-content{ display:none; }
+  .feed-list{ display:flex; flex-direction:column; gap:6px; overflow-y:auto; flex:1 1 auto; min-height:0; padding-top:4px; }
+
+  .card{
+    background:var(--ai-surface2); border:1px solid var(--ai-border); border-radius:var(--radius-sm);
+    padding:9px 10px; display:flex; align-items:center; gap:8px; min-height:24px; cursor:pointer;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  .card:hover{ border-color:var(--ai-border-strong); background:var(--ai-surface3); }
+  .card.empty{ opacity:.4; cursor:default; }
+  .card.empty:hover{ border-color:var(--ai-border); background:var(--ai-surface2); }
+  .card .evt-id{ font-size:10px; font-weight:600; color:var(--ai-text-soft); flex:0 0 auto; white-space:nowrap; }
+  .card .msg{ font-size:11.5px; color:var(--ai-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; }
+  .card .tag{
+    font-size:9px; font-weight:600; color:var(--ai-text-soft);
+    background:var(--ai-surface3); padding:2px 8px; border-radius:20px; flex:0 0 auto; white-space:nowrap;
+    border:1px solid var(--ai-border);
+  }
+  .card .conf-mini{ font-size:9.5px; font-weight:600; flex:0 0 auto; padding:2px 7px; border-radius:20px; border:1px solid transparent; }
+  .conf-high{ color:#ffffff; background:var(--ai-text); }
+  .conf-med{ color:var(--ai-text); background:var(--ai-border-strong); }
+  .conf-low{ color:var(--ai-text-soft); background:var(--ai-surface2); border-color:var(--ai-border-strong); }
+  .card .sender{ font-size:10.5px; font-weight:600; color:var(--ai-text-soft); flex:0 0 auto; width:62px; }
+
+  /* ---------- Agent Tab (detail view) ---------- */
+  .agent-tab{ display:flex; flex-direction:column; gap:14px; overflow-y:auto; padding-top:4px; animation:fade-in .15s ease; }
+  @keyframes fade-in{ from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:none;} }
+  .back-btn{
+    align-self:flex-start; background:none; border:none; color:var(--ai-text-soft);
+    font-size:11.5px; font-weight:500; cursor:pointer; padding:2px 0; display:flex; align-items:center; gap:5px;
+  }
+  .back-btn:hover{ color:var(--ai-text); }
+  .agent-tab-head{ display:flex; align-items:center; gap:8px; }
+  .agent-tab-head .evt-id{ font-size:11px; font-weight:600; color:var(--ai-text-soft); }
+  .field-label{ font-size:10px; font-weight:600; color:var(--ai-text-soft); text-transform:uppercase; letter-spacing:.5px; margin-bottom:5px; }
+  .message-text{ font-size:12.5px; line-height:1.5; color:var(--ai-text); background:var(--ai-surface2); border:1px solid var(--ai-border); border-radius:var(--radius-sm); padding:10px 11px; }
+  .activity-match{
+    display:flex; align-items:center; gap:8px; background:var(--ai-surface2); border:1px solid var(--ai-border);
+    border-radius:var(--radius-sm); padding:9px 11px;
+  }
+  .activity-id{ font-size:11px; font-weight:600; color:var(--ai-text); background:var(--ai-surface3); padding:2px 8px; border-radius:5px; }
+  .activity-name{ font-size:12.5px; color:var(--ai-text); font-weight:500; }
+  .wbs-path{ font-size:10.5px; color:var(--ai-text-soft); margin-top:6px; }
+  .confidence-row{ display:flex; align-items:center; gap:10px; }
+  .confidence-bar{ flex:1 1 auto; height:6px; background:var(--ai-surface3); border:1px solid var(--ai-border); border-radius:20px; overflow:hidden; }
+  .confidence-fill{ height:100%; border-radius:20px; background:var(--ai-text); }
+  .confidence-fill.med{ background:var(--ai-border-strong); }
+  .confidence-fill.low{ background:var(--ai-muted); }
+  .confidence-value{ font-size:11.5px; font-weight:600; white-space:nowrap; color:var(--ai-text); }
+  .confidence-value.med{ color:var(--ai-text-soft); }
+  .confidence-value.low{ color:var(--ai-muted); }
+
+  .agent-actions{ display:flex; gap:8px; }
+  .agent-actions button{
+    flex:1 1 auto; font-family:inherit; font-size:12px; font-weight:600;
+    padding:9px 8px; border-radius:var(--radius-sm); border:1px solid transparent; cursor:pointer;
+    transition:filter .12s ease, background .12s ease;
+  }
+  .btn-accept{ background:var(--ai-text); color:#fff; }
+  .btn-accept:hover{ background:#000; }
+  .btn-decline{ background:transparent; color:var(--ai-text-soft); border-color:var(--ai-border-strong); }
+  .btn-decline:hover{ background:var(--ai-surface3); color:var(--ai-text); }
+  .btn-edit{ background:transparent; color:var(--ai-text-soft); border-color:var(--ai-border); }
+  .btn-edit:hover{ background:var(--ai-surface3); color:var(--ai-text); }
+
+  .edit-panel{ display:flex; flex-direction:column; gap:8px; background:var(--ai-surface2); border:1px solid var(--ai-border); border-radius:var(--radius-sm); padding:11px; }
+  .edit-panel select{
+    font-family:inherit; font-size:12px; padding:7px 8px; border-radius:var(--radius-sm);
+    border:1px solid var(--ai-border); background:var(--ai-surface); color:var(--ai-text);
+  }
+  .edit-actions{ display:flex; gap:8px; }
+  .edit-actions button{ flex:1 1 auto; font-family:inherit; font-size:11.5px; font-weight:600; padding:7px 8px; border-radius:var(--radius-sm); border:1px solid var(--ai-border); cursor:pointer; }
+  .btn-save{ background:var(--ai-text); color:#fff; border-color:var(--ai-text); }
+  .btn-save:hover{ background:#000; }
+  .btn-cancel{ background:transparent; color:var(--ai-text-soft); }
+  .btn-cancel:hover{ background:var(--ai-surface3); color:var(--ai-text); }
+
+  .status-banner{
+    font-size:11.5px; font-weight:600; padding:8px 11px; border-radius:var(--radius-sm);
+    display:flex; align-items:center; gap:6px;
+    background:var(--ai-surface3); color:var(--ai-text); border:1px solid var(--ai-border);
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============ AUTH VIEW ============ -->
+  <div id="view-auth" class="view active">
+    <div class="auth-card right-active" id="authCard">
+
+      <div class="auth-form-panel sign-in-panel">
+        <form class="auth-form" id="signInForm">
+          <h2>Welcome Back</h2>
+          <p class="auth-sub">Sign in to continue to Kranti P1</p>
+          <label class="auth-field"><span class="auth-icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="13" height="9" rx="1.2"/><path d="M2 4.5l6 5 6-5"/></svg></span><input type="email" placeholder="Email" required></label>
+          <label class="auth-field"><span class="auth-icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.2"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg></span><input type="password" placeholder="Password" required></label>
+          <a class="auth-link" href="#">Forgot password?</a>
+          <button type="submit" class="auth-submit">Sign In</button>
+        </form>
+      </div>
+
+      <div class="auth-form-panel sign-up-panel">
+        <form class="auth-form" id="signUpForm">
+          <h2>Create Account</h2>
+          <button type="button" class="auth-google"><span class="g-mark">G</span> Continue with Google</button>
+          <p class="auth-sub">or register with your work email</p>
+          <label class="auth-field"><span class="auth-icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5" r="2.6"/><path d="M2.5 13.2c.9-2.6 3-4 5.5-4s4.6 1.4 5.5 4"/></svg></span><input type="text" placeholder="Full name" required></label>
+          <label class="auth-field"><span class="auth-icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="13" height="9" rx="1.2"/><path d="M2 4.5l6 5 6-5"/></svg></span><input type="email" placeholder="Email" required></label>
+          <label class="auth-field"><span class="auth-icon"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.2"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg></span><input type="password" placeholder="Password" required></label>
+          <button type="submit" class="auth-submit">Register</button>
+        </form>
+      </div>
+
+      <div class="auth-overlay-container">
+        <div class="auth-overlay">
+          <div class="auth-overlay-panel overlay-left">
+            <span class="brand-mark"></span>
+            <h2>Welcome Back!</h2>
+            <p>To keep connected with us, please sign in with your personal info.</p>
+            <button type="button" class="auth-ghost-btn" id="toSignIn">Sign In</button>
+          </div>
+          <div class="auth-overlay-panel overlay-right">
+            <span class="brand-mark"></span>
+            <h2>New Here?</h2>
+            <p>Create an account and let Kranti AI start turning field messages into progress.</p>
+            <button type="button" class="auth-ghost-btn" id="toSignUp">Create Account</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ NAVIGATOR VIEW ============ -->
+  <div id="view-navigator" class="view">
+    <div class="nav-card">
+      <h2 class="nav-title">What are we working on today?</h2>
+      <div class="nav-options">
+        <button class="nav-option featured" data-goto="dashboard">
+          <span class="nav-icon">&#8594;</span>
+          <span class="nav-text"><strong>Open Last Viewed</strong><small>Office Building Addition</small></span>
+        </button>
+        <button class="nav-option" data-goto="dashboard">
+          <span class="nav-icon">&#128193;</span>
+          <span class="nav-text"><strong>Open Existing</strong><small>Browse or search projects</small></span>
+        </button>
+        <button class="nav-option" data-goto="dashboard">
+          <span class="nav-icon">&#10010;</span>
+          <span class="nav-text"><strong>Create New</strong><small>Blank schedule</small></span>
+        </button>
+        <button class="nav-option" data-goto="dashboard">
+          <span class="nav-icon">&#127760;</span>
+          <span class="nav-text"><strong>Global Data</strong><small>EPS, Roles, Calendars</small></span>
+        </button>
+      </div>
+      <button class="nav-signout" id="navSignOut">&larr; Sign out</button>
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD VIEW ============ -->
+  <div id="view-dashboard" class="view">
+
+  <!-- ============ Kranti P1 frame ============ -->
+  <div class="frame p1-frame">
+    <div class="frame-titlebar">
+      <span class="titlebar-mark"></span>
+      <h1>Kranti P1</h1>
+      <span class="subtitle">Office Building Addition</span>
+      <button class="titlebar-back" id="backToNavigator">&#8676; Projects</button>
+    </div>
+    <div class="menubar">
+      <button>File</button><button>Edit</button><button>View</button>
+      <button>Project</button><button>Enterprise</button><button>Tools</button><button>Help</button>
+    </div>
+
+    <div class="main-row">
+      <div class="activity-pane">
+        <div class="pane-scroll" id="tableScroll">
+          <table class="acttable">
+            <thead>
+              <tr>
+                <th class="col-id">Activity ID</th>
+                <th>Activity Name</th>
+                <th class="col-dur">Orig. Dur</th>
+                <th class="col-dur">Rem. Dur</th>
+                <th class="col-pct">% Complete</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="gantt-pane">
+        <div class="gantt-scroll" id="ganttScroll">
+          <div class="gantt-inner" id="ganttInner">
+            <div class="gantt-header" id="ganttHeader"></div>
+            <div class="gantt-body" id="ganttBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="details-pane">
+      <div class="tabstrip">
+        <button class="active" data-tab="general">General</button>
+        <button data-tab="status">Status</button>
+        <button data-tab="resources">Resources</button>
+        <button data-tab="notebook">Notebook</button>
+      </div>
+      <div class="details-body" id="detailsBody">
+        <div class="details-empty">Select an activity above to view its details.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ Kranti AI frame ============ -->
+  <div class="frame ai-frame">
+    <div class="frame-titlebar">
+      <span class="titlebar-mark"></span>
+      <h1>Kranti AI</h1>
+    </div>
+    <div class="ai-body" id="aiBody">
+
+      <div class="ai-section expanded" data-section="review">
+        <div class="ai-section-head">
+          <button class="collapse-btn" data-toggle="review">&#9662;</button>
+          <span class="section-title">Review Queue</span>
+          <span class="section-count" id="reviewCount"></span>
+          <button class="expand-btn" id="openReviewDrawer" title="Open full review queue">&#8599;</button>
+        </div>
+        <div class="ai-section-content">
+          <div class="feed-list" id="reviewList"></div>
+        </div>
+      </div>
+
+      <div class="ai-section expanded" data-section="ingestion">
+        <div class="ai-section-head">
+          <button class="collapse-btn" data-toggle="ingestion">&#9662;</button>
+          <span class="section-title">Ingestion Feed</span>
+          <span class="section-count" id="ingestionCount"></span>
+        </div>
+        <div class="ai-section-content">
+          <div class="feed-list" id="ingestionList"></div>
+        </div>
+      </div>
+
+      <div class="ai-section expanded" data-section="suggestions">
+        <div class="ai-section-head">
+          <button class="collapse-btn" data-toggle="suggestions">&#9662;</button>
+          <span class="section-title">Suggestions</span>
+          <span class="section-count" id="suggestionsCount"></span>
+        </div>
+        <div class="ai-section-content">
+          <div class="feed-list" id="suggestionsList"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  </div><!-- /#view-dashboard -->
+
+  <!-- ============ REVIEW QUEUE — FULL VIEW DRAWER ============ -->
+  <div class="drawer-overlay" id="reviewDrawerOverlay">
+    <div class="review-drawer" role="dialog" aria-label="Review Queue — full view">
+      <div class="drawer-header">
+        <div class="drawer-header-title">
+          <div>
+            <div style="display:flex;align-items:center;gap:9px;">
+              <span class="brand-mark"></span>
+              <h2>Review Queue</h2>
+            </div>
+            <p class="drawer-sub">Field messages matched to schedule activities by Kranti AI</p>
+          </div>
+        </div>
+        <button class="drawer-close" id="closeReviewDrawer">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-list" id="drawerList"></div>
+        <div class="drawer-detail" id="drawerDetail">
+          <div class="drawer-placeholder">Select a message on the left to review Kranti AI's match.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================================================
+   TIMELINE SETUP  (Apr 2018 -> Jun 2021, 39 months)
+   ========================================================= */
+const MONTH_W = 30;
+const QUARTERS = [
+  {label:"Q2 2018", months:["Apr","May","Jun"]},
+  {label:"Q3 2018", months:["Jul","Aug","Sep"]},
+  {label:"Q4 2018", months:["Oct","Nov","Dec"]},
+  {label:"Q1 2019", months:["Jan","Feb","Mar"]},
+  {label:"Q2 2019", months:["Apr","May","Jun"]},
+  {label:"Q3 2019", months:["Jul","Aug","Sep"]},
+  {label:"Q4 2019", months:["Oct","Nov","Dec"]},
+  {label:"Q1 2020", months:["Jan","Feb","Mar"]},
+  {label:"Q2 2020", months:["Apr","May","Jun"]},
+  {label:"Q3 2020", months:["Jul","Aug","Sep"]},
+  {label:"Q4 2020", months:["Oct","Nov","Dec"]},
+  {label:"Q1 2021", months:["Jan","Feb","Mar"]},
+  {label:"Q2 2021", months:["Apr","May","Jun"]},
+];
+const TOTAL_MONTHS = QUARTERS.length*3;
+const TOTAL_W = TOTAL_MONTHS*MONTH_W;
+
+/* =========================================================
+   ACTIVITY DATA
+   ========================================================= */
+const activities = [
+ {id:"",     name:"Office Building Addition", level:0, type:"wbs",  orig:"361d", rem:"361d", pct:"0%", start:3,  end:19,  dateLabel:"18-Nov-19, Office Building Addition"},
+ {id:"",     name:"Milestones",               level:1, type:"wbs",  orig:"361d", rem:"361d", pct:"0%", start:3,  end:19,  dateLabel:"18-Nov-19, Milestones"},
+ {id:"B1000",name:"Contract Award",           level:2, type:"milestone", orig:"0d", rem:"0d", pct:"0%", start:3, end:3, dateLabel:"Contract Award, 02-Jul-18", labelSide:"left"},
+ {id:"B1200",name:"Building Addition Complete",level:2, type:"milestone", orig:"0d", rem:"0d", pct:"0%", start:19, end:19, dateLabel:"Building Addition Complete,"},
+ {id:"",     name:"Design and Engineering",   level:1, type:"wbs",  orig:"41d", rem:"41d", pct:"0%", start:3, end:5, dateLabel:"27-Aug-18, Design and Engineering"},
+ {id:"B1010",name:"Design Phase",             level:2, type:"task", orig:"41d", rem:"41d", pct:"0%", start:3, end:5, dateLabel:"Design Phase", labelSide:"left"},
+ {id:"",     name:"Foundation",               level:1, type:"wbs",  orig:"108d", rem:"108d", pct:"0%", start:5, end:9, dateLabel:"25-Jan-19, Foundation"},
+ {id:"B1040",name:"Site Preparation",         level:2, type:"task", orig:"32d", rem:"32d", pct:"0%", start:5, end:6, dateLabel:"Site Preparation", labelSide:"left"},
+ {id:"B1060",name:"Excavation & Formwork",    level:2, type:"task", orig:"63d", rem:"63d", pct:"0%", start:6, end:8, dateLabel:"Excavation & Formwork", labelSide:"left"},
+ {id:"B1080",name:"Pour Slab",                level:2, type:"task", orig:"13d", rem:"13d", pct:"0%", start:8, end:9, dateLabel:"Pour Slab", labelSide:"left"},
+ {id:"",     name:"Structure",                level:1, type:"wbs",  orig:"115d", rem:"115d", pct:"0%", start:9, end:15, dateLabel:"05-Jul-19, Structure"},
+ {id:"B1090",name:"Erect Structural Frame",   level:2, type:"task", orig:"36d", rem:"36d", pct:"0%", start:9, end:11, dateLabel:"Erect Structural Frame", labelSide:"left"},
+ {id:"B1100",name:"Floor Decking",            level:2, type:"task", orig:"25d", rem:"25d", pct:"0%", start:10, end:12, dateLabel:"Floor Decking", labelSide:"left"},
+ {id:"B1110",name:"Concrete First & Second Floors", level:2, type:"task", orig:"54d", rem:"54d", pct:"0%", start:11, end:15, dateLabel:"Concrete First & Second Floors", labelSide:"left"},
+ {id:"",     name:"Exterior Finishes",        level:1, type:"wbs",  orig:"18d", rem:"18d", pct:"0%", start:15, end:16, dateLabel:"31-Jul-19, Exterior Finishes"},
+ {id:"",     name:"Roof",                     level:2, type:"wbs",  orig:"18d", rem:"18d", pct:"0%", start:15, end:16, dateLabel:"31-Jul-19, Roof"},
+ {id:"B1130",name:"Insulation and Built-up Roofing", level:3, type:"task", orig:"18d", rem:"18d", pct:"0%", start:15, end:16, dateLabel:"Insulation and Built-up Roofing", labelSide:"left"},
+ {id:"",     name:"Doors and Windows",        level:2, type:"wbs",  orig:"6d", rem:"6d", pct:"0%", start:16, end:17, dateLabel:"22-Jul-19, Doors and Windows"},
+ {id:"B1120",name:"Install Door and Window Frames", level:3, type:"task", orig:"6d", rem:"6d", pct:"0%", start:16, end:17, dateLabel:"Install Door and Window Frames", labelSide:"left"},
+ {id:"",     name:"Interior Finishes",        level:1, type:"wbs",  orig:"320d", rem:"320d", pct:"0%", start:17, end:19, dateLabel:"18-Nov-19, Interior Finishes"},
+ {id:"B1140",name:"Drywall in Offices",       level:2, type:"task", orig:"27d", rem:"27d", pct:"0%", start:17, end:18, dateLabel:"Drywall in Offices", labelSide:"left"},
+ {id:"B1190",name:"Touch-up and Clean-up",    level:2, type:"task", orig:"6d", rem:"6d", pct:"0%", start:18, end:19, dateLabel:"Touch-up and Clean-up", labelSide:"left", selected:true},
+ {id:"",     name:"Floor and Carpeting",      level:2, type:"wbs",  orig:"305d", rem:"305d", pct:"0%", start:9, end:19, dateLabel:"28-Oct-19, Floor and Carpeting"},
+ {id:"B1020",name:"Assemble and Submit Flooring Samples", level:3, type:"square", orig:"5d", rem:"5d", pct:"0%", start:9, end:9.4, dateLabel:"Assemble and Submit Flooring Samples", labelSide:"left"},
+ {id:"B1030",name:"Review and Approve Flooring", level:3, type:"task", orig:"18d", rem:"18d", pct:"0%", start:9.4, end:10.5, dateLabel:"Review and Approve Flooring", labelSide:"left"},
+ {id:"B1050",name:"Prepare, Review and Award Flooring Contract", level:3, type:"task", orig:"33d", rem:"33d", pct:"0%", start:6, end:9, dateLabel:"Prepare, Review and Award Flooring Contract", labelSide:"left"},
+ {id:"B1070",name:"Fabricate and Deliver Flooring", level:3, type:"task", orig:"209d", rem:"209d", pct:"0%", start:11, end:19, dateLabel:"Fabricate and Deliver Flooring", labelSide:"left"},
+];
+
+/* =========================================================
+   TREE STRUCTURE (project > sub-projects > activities > sub-activities)
+   ========================================================= */
+function computeStructure(){
+  const stack = [];
+  activities.forEach((a,i)=>{
+    a._children = [];
+    while(stack.length && activities[stack[stack.length-1]].level >= a.level) stack.pop();
+    a._parent = stack.length ? stack[stack.length-1] : -1;
+    if(a._parent >= 0) activities[a._parent]._children.push(i);
+    stack.push(i);
+  });
+}
+computeStructure();
+
+const collapsedSet = new Set();
+(function initCollapseState(){
+  // start with every branch node collapsed...
+  activities.forEach((a,i)=>{ if(a._children.length) collapsedSet.add(i); });
+  // ...except the ancestor chain of the initially-selected activity, so it's visible on load
+  let defaultIndex = activities.findIndex(a=>a.selected);
+  if(defaultIndex < 0) defaultIndex = 0;
+  let p = activities[defaultIndex]._parent;
+  while(p >= 0){ collapsedSet.delete(p); p = activities[p]._parent; }
+})();
+
+function isVisible(i){
+  let p = activities[i]._parent;
+  while(p >= 0){
+    if(collapsedSet.has(p)) return false;
+    p = activities[p]._parent;
+  }
+  return true;
+}
+function computeVisible(){
+  const out = [];
+  activities.forEach((a,i)=>{ if(isVisible(i)) out.push(i); });
+  return out;
+}
+function toggleCollapse(i){
+  if(collapsedSet.has(i)) collapsedSet.delete(i); else collapsedSet.add(i);
+  renderAll();
+}
+
+/* =========================================================
+   BUILD LEFT TABLE  (re-run on every expand/collapse)
+   ========================================================= */
+const tbody = document.getElementById("tableBody");
+function renderTable(visible){
+  tbody.innerHTML = "";
+  visible.forEach(i=>{
+    const a = activities[i];
+    const tr = document.createElement("tr");
+    tr.dataset.index = i;
+    if(a.type==="wbs") tr.classList.add("wbs");
+    if(i === currentIndex) tr.classList.add("selected");
+    const hasKids = a._children.length>0;
+    const toggleHtml = hasKids
+      ? `<button class="tree-toggle${collapsedSet.has(i)?"":" open"}" data-toggle-index="${i}">&#9656;</button>`
+      : `<span class="tree-spacer"></span>`;
+    const leafIcon = a.type==="milestone" ? "&#9670;" : a.type==="square" ? "&#9633;" : "&#9679;";
+    const iconHtml = hasKids ? "" : `<span class="icon">${leafIcon}</span>`;
+    tr.innerHTML = `
+      <td class="col-id mono">${a.id||""}</td>
+      <td>
+        <div class="name-cell">
+          <span class="indent" style="width:${a.level*14}px"></span>
+          ${toggleHtml}
+          ${iconHtml}
+          <span class="row-name">${a.name}</span>
+        </div>
+      </td>
+      <td class="col-dur mono">${a.orig}</td>
+      <td class="col-dur mono">${a.rem}</td>
+      <td class="col-pct mono">${a.pct}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+tbody.addEventListener("click", (e)=>{
+  const toggleBtn = e.target.closest(".tree-toggle");
+  if(toggleBtn){ e.stopPropagation(); toggleCollapse(parseInt(toggleBtn.dataset.toggleIndex,10)); return; }
+  const tr = e.target.closest("tr[data-index]");
+  if(tr) selectActivity(parseInt(tr.dataset.index,10));
+});
+
+/* =========================================================
+   BUILD GANTT HEADER
+   ========================================================= */
+const ganttHeader = document.getElementById("ganttHeader");
+const qtrRow = document.createElement("div");
+qtrRow.className = "qtr-row";
+const monthRow = document.createElement("div");
+monthRow.className = "month-row";
+QUARTERS.forEach(q => {
+  const qc = document.createElement("div");
+  qc.className = "qtr-cell";
+  qc.style.width = (MONTH_W*3)+"px";
+  qc.textContent = q.label;
+  qtrRow.appendChild(qc);
+  q.months.forEach(m => {
+    const mc = document.createElement("div");
+    mc.className = "month-cell";
+    mc.style.width = MONTH_W+"px";
+    mc.textContent = m;
+    monthRow.appendChild(mc);
+  });
+});
+qtrRow.style.width = TOTAL_W+"px";
+monthRow.style.width = TOTAL_W+"px";
+ganttHeader.appendChild(qtrRow);
+ganttHeader.appendChild(monthRow);
+ganttHeader.style.width = TOTAL_W+"px";
+
+/* =========================================================
+   BUILD GANTT BODY  (re-run on every expand/collapse)
+   ========================================================= */
+const ganttBody = document.getElementById("ganttBody");
+ganttBody.style.width = TOTAL_W+"px";
+
+function lblGuess(text){ return Math.min(text.length*5.4, 220); }
+
+function buildGanttRow(i){
+  const a = activities[i];
+  const row = document.createElement("div");
+  row.className = "gantt-row";
+  row.dataset.index = i;
+  if(i === currentIndex) row.classList.add("selected");
+  row.style.width = TOTAL_W+"px";
+
+  for(let m=0;m<=TOTAL_MONTHS;m++){
+    const vg = document.createElement("div");
+    vg.className = "vgrid" + (m%3===0 ? " qtr":"");
+    vg.style.left = (m*MONTH_W)+"px";
+    row.appendChild(vg);
+  }
+
+  const left = a.start*MONTH_W;
+  const width = Math.max((a.end-a.start)*MONTH_W, 4);
+
+  if(a.type === "wbs"){
+    const bar = document.createElement("div");
+    bar.className = "bar summary";
+    bar.style.left = left+"px"; bar.style.width = width+"px";
+    row.appendChild(bar);
+    const lbl = document.createElement("div");
+    lbl.className = "bar-label"; lbl.style.left = (left+width+4)+"px";
+    lbl.textContent = a.dateLabel;
+    row.appendChild(lbl);
+  } else if(a.type === "milestone"){
+    const d = document.createElement("div");
+    d.className = "diamond"; d.style.left = (left-5)+"px";
+    row.appendChild(d);
+    const lbl = document.createElement("div");
+    lbl.className = "bar-label";
+    if(a.labelSide==="left"){ lbl.style.left = (left-4-lblGuess(a.dateLabel))+"px"; }
+    else { lbl.style.left = (left+8)+"px"; }
+    lbl.textContent = a.dateLabel;
+    row.appendChild(lbl);
+  } else if(a.type === "square"){
+    const s = document.createElement("div");
+    s.className = "square"; s.style.left = left+"px";
+    row.appendChild(s);
+    const lbl = document.createElement("div");
+    lbl.className = "bar-label"; lbl.style.left = (left+14)+"px";
+    lbl.textContent = a.dateLabel;
+    row.appendChild(lbl);
+  } else {
+    const bar = document.createElement("div");
+    bar.className = "bar"; bar.style.left = left+"px"; bar.style.width = width+"px";
+    row.appendChild(bar);
+    const lbl = document.createElement("div");
+    lbl.className = "bar-label"; lbl.style.left = (left+width+4)+"px";
+    lbl.textContent = a.dateLabel;
+    row.appendChild(lbl);
+  }
+  return row;
+}
+
+function renderGanttBody(visible){
+  ganttBody.innerHTML = "";
+  visible.forEach(i => ganttBody.appendChild(buildGanttRow(i)));
+}
+ganttBody.addEventListener("click", (e)=>{
+  const row = e.target.closest(".gantt-row[data-index]");
+  if(row) selectActivity(parseInt(row.dataset.index,10));
+});
+
+/* =========================================================
+   SELECTION + top-level render loop
+   ========================================================= */
+let currentIndex = activities.findIndex(a=>a.selected);
+if(currentIndex < 0) currentIndex = 0;
+
+function renderAll(){
+  const visible = computeVisible();
+  renderTable(visible);
+  renderGanttBody(visible);
+}
+
+function selectActivity(i){
+  currentIndex = i;
+  renderAll();
+  const tr = document.querySelector(`#tableBody tr[data-index="${i}"]`);
+  const gr = document.querySelector(`.gantt-row[data-index="${i}"]`);
+  if(tr) tr.scrollIntoView({block:"nearest"});
+  if(gr) gr.scrollIntoView({block:"nearest"});
+  renderDetails(i);
+}
+
+function renderDetails(i){
+  const a = activities[i];
+  const body = document.getElementById("detailsBody");
+  const startDate = monthOffsetToDate(a.start);
+  const endDate = monthOffsetToDate(a.end);
+  body.innerHTML = `
+    <div class="details-grid">
+      <label>Activity ID</label><div class="field mono">${a.id || "— (WBS node)"}</div>
+      <label>Activity Name</label><div class="field">${a.name}</div>
+      <label>Activity Type</label><div class="field">${a.type==="wbs"?"WBS Summary":a.type==="milestone"?"Milestone":"Task"}</div>
+      <label>% Complete</label><div class="field mono">${a.pct}</div>
+      <label>Start</label><div class="field mono">${startDate}</div>
+      <label>Finish</label><div class="field mono">${endDate}</div>
+      <label>Original Duration</label><div class="field mono">${a.orig}</div>
+      <label>Remaining Duration</label><div class="field mono">${a.rem}</div>
+      <label>Predecessors</label><div class="field">${i>0 ? (activities[i-1].id || activities[i-1].name) : "—"}</div>
+      <label>Resources</label><div class="field">Field Crew, Site Engineer</div>
+    </div>
+  `;
+}
+
+function monthOffsetToDate(offset){
+  const base = new Date(2018,3,1);
+  const d = new Date(base.getFullYear(), base.getMonth()+Math.floor(offset), 1 + Math.round((offset%1)*28));
+  return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"});
+}
+
+document.querySelectorAll(".tabstrip button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tabstrip button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    const a = activities[currentIndex];
+    const body = document.getElementById("detailsBody");
+    if(tab==="general"){ renderDetails(currentIndex); return; }
+    if(tab==="status"){
+      body.innerHTML = `<div class="details-grid">
+        <label>Status</label><div class="field">${a.pct==="0%"?"Not Started":"In Progress"}</div>
+        <label>Data Date</label><div class="field mono">09-Sep-26</div>
+        <label>Physical % Complete</label><div class="field mono">${a.pct}</div>
+        <label>Schedule % Complete</label><div class="field mono">${a.pct}</div>
+      </div>`;
+      return;
+    }
+    if(tab==="resources"){
+      body.innerHTML = `<div class="details-grid">
+        <label>Resource</label><div class="field">Field Crew A</div>
+        <label>Role</label><div class="field">${a.type==="task" ? "Site Labor" : "—"}</div>
+        <label>Budgeted Units</label><div class="field mono">${a.type==="task" ? "120h" : "—"}</div>
+        <label>Actual Units</label><div class="field mono">0h</div>
+      </div>`;
+      return;
+    }
+    if(tab==="notebook"){
+      body.innerHTML = `<div class="details-empty">No notebook topics recorded for "${a.name}".</div>`;
+      return;
+    }
+  });
+});
+
+selectActivity(currentIndex);
+
+const tableScroll = document.getElementById("tableScroll");
+const ganttScroll = document.getElementById("ganttScroll");
+let syncing = false;
+tableScroll.addEventListener("scroll", ()=>{ if(syncing) return; syncing=true; ganttScroll.scrollTop = tableScroll.scrollTop; syncing=false; });
+ganttScroll.addEventListener("scroll", ()=>{ if(syncing) return; syncing=true; tableScroll.scrollTop = ganttScroll.scrollTop; syncing=false; });
+
+/* =========================================================
+   KRANTI AI PANEL DATA
+   ========================================================= */
+function confidenceTier(v){ return v>=85 ? "high" : v>=65 ? "med" : "low"; }
+function confidenceLabel(v){ return v>=85 ? "High" : v>=65 ? "Medium" : "Low"; }
+
+const reviewItems = [
+ {id:"EVT-0041", preview:"Hydrotest Line 24\"-XX, Ch 12+300 to 12+450...", tag:"Piping",
+   message:"Hydrotest Line 24\"-XX, Ch 12+300 to 12+450 completed successfully at 1.5x design pressure, held for 4 hours, no leaks observed. Photos attached.",
+   matchIndex: activities.findIndex(a=>a.id==="B1040"), confidence:92, filled:true, status:null},
+ {id:"EVT-0042", preview:"Excavate Foundation Pit Pu...", tag:"Civil",
+   message:"Excavation of foundation pit Pu-3 to design depth of 2.4m complete. Soil samples taken for compaction test. Ready for formwork crew tomorrow.",
+   matchIndex: activities.findIndex(a=>a.id==="B1060"), confidence:88, filled:true, status:null},
+ {id:"EVT-0043", preview:"Pull 3Cx150mm² Cable M...", tag:"Electrical",
+   message:"Pulled 3Cx150mm² cable from MDB-2 to Panel L3-A. Termination scheduled for Thursday pending inspector sign-off on conduit route.",
+   matchIndex: activities.findIndex(a=>a.id==="B1130"), confidence:61, filled:true, status:null},
+ {id:"EVT-0050", preview:"Erect Structural Steel — L3...", tag:"Mechanical",
+   message:"Erected structural steel members for Level 3 north bay. Bolt torque check pending, crane released at 15:40.",
+   matchIndex: activities.findIndex(a=>a.id==="B1090"), confidence:95, filled:true, status:null},
+ {id:"EVT-0047", filled:false},
+ {id:"EVT-0052", filled:false},
+ {id:"EVT-0044", filled:false},
+];
+
+const ingestionItems = [
+ {sender:"R.Sharma", msg:"Hydrotest at Ch. 14+500 commencing n..."},
+ {sender:"M.Patel",  msg:"Backfilling at 8+400 done. Photo attac..."},
+ {sender:"P.Nair",   msg:"Backfilling at 8+400 done. Photo attac..."},
+ {sender:"A.Singh",  msg:"Zone 3 fire line flushing completed. Insp..."},
+ {empty:true},{empty:true},{empty:true},
+];
+
+const suggestionItems = [
+ {msg:"E-34 is 1 day behind schedule, her...", filled:true},
+ {empty:true},{empty:true},{empty:true},{empty:true},{empty:true},
+];
+
+function buildWbsPath(matchIndex){
+  const target = activities[matchIndex];
+  const path = [target.name];
+  let level = target.level;
+  for(let i=matchIndex-1;i>=0 && level>0;i--){
+    if(activities[i].level < level){ path.unshift(activities[i].name); level = activities[i].level; }
+  }
+  return path.join(" \u203a ");
+}
+
+function statusChipHtml(item){
+  if(!item.status) return "";
+  return `<span class="status-chip ${item.status}">${item.status==="accepted"?"Accepted":"Declined"}</span>`;
+}
+
+/* Central status setter — keeps the sidebar mini-list and the full drawer in sync
+   no matter which surface the Accept/Decline/Edit action happened on. */
+function applyReviewStatus(idx, status){
+  reviewItems[idx].status = status;
+  renderReviewMiniList();
+  if(currentAgentTabIndex === idx) renderMiniAgentTab(idx);
+  if(reviewDrawerOverlay.classList.contains("open")){
+    renderDrawerList();
+    if(drawerCurrentIdx === idx) renderDrawerDetail(idx);
+  }
+}
+
+/* ---- Review Queue: compact sidebar list + inline agent tab ---- */
+const reviewSection = document.querySelector('.ai-section[data-section="review"] .ai-section-content');
+document.getElementById("reviewCount").textContent = reviewItems.filter(r=>r.filled).length;
+let currentAgentTabIndex = null;
+
+function renderReviewMiniList(){
+  reviewSection.innerHTML = `<div class="feed-list" id="reviewList"></div>`;
+  const list = document.getElementById("reviewList");
+  reviewItems.forEach((item, idx)=>{
+    const card = document.createElement("div");
+    card.className = "card" + (item.filled? "" : " empty");
+    if(!item.filled){
+      card.innerHTML = `<span class="evt-id mono">${item.id}</span><span class="msg"></span>`;
+      list.appendChild(card);
+      return;
+    }
+    const tier = confidenceTier(item.confidence);
+    card.innerHTML = `
+      <span class="evt-id mono">${item.id}</span>
+      <span class="msg">${item.preview}</span>
+      <span class="tag">${item.tag}</span>
+      ${item.status ? statusChipHtml(item) : `<span class="conf-mini conf-${tier}">${item.confidence}%</span>`}
+    `;
+    card.addEventListener("click", ()=> renderMiniAgentTab(idx));
+    list.appendChild(card);
+  });
+}
+
+function renderMiniAgentTab(idx){
+  currentAgentTabIndex = idx;
+  const item = reviewItems[idx];
+  const activity = activities[item.matchIndex];
+  const tier = confidenceTier(item.confidence);
+  const wbsPath = buildWbsPath(item.matchIndex);
+
+  reviewSection.innerHTML = `
+    <div class="agent-tab">
+      <button class="back-btn" id="backToQueue">&larr; Back to queue</button>
+      <div class="agent-tab-head">
+        <span class="evt-id mono">${item.id}</span>
+        <span class="tag">${item.tag}</span>
+        ${statusChipHtml(item)}
+      </div>
+
+      <div>
+        <div class="field-label">Message</div>
+        <div class="message-text">${item.message}</div>
+      </div>
+
+      <div>
+        <div class="field-label">Extracted Activity</div>
+        <div class="activity-match">
+          <span class="activity-id mono">${activity.id}</span>
+          <span class="activity-name">${activity.name}</span>
+        </div>
+        <div class="wbs-path">${wbsPath}</div>
+      </div>
+
+      <div>
+        <div class="field-label">Agent Confidence</div>
+        <div class="confidence-row">
+          <div class="confidence-bar"><div class="confidence-fill ${tier}" style="width:${item.confidence}%"></div></div>
+          <span class="confidence-value ${tier}">${item.confidence}% &middot; ${confidenceLabel(item.confidence)}</span>
+        </div>
+      </div>
+
+      <div class="agent-actions">
+        <button class="btn-accept" id="btnAccept">Accept</button>
+        <button class="btn-edit" id="btnEdit">Edit match</button>
+        <button class="btn-decline" id="btnDecline">Decline</button>
+      </div>
+
+      <div id="editPanel"></div>
+    </div>
+  `;
+
+  document.getElementById("backToQueue").addEventListener("click", ()=>{ currentAgentTabIndex = null; renderReviewMiniList(); });
+  document.getElementById("btnAccept").addEventListener("click", ()=> applyReviewStatus(idx, "accepted"));
+  document.getElementById("btnDecline").addEventListener("click", ()=> applyReviewStatus(idx, "declined"));
+  document.getElementById("btnEdit").addEventListener("click", ()=> showEditPanel(idx, "editPanel", renderMiniAgentTab));
+}
+
+function showEditPanel(idx, panelId, rerenderFn){
+  const panel = document.getElementById(panelId);
+  const options = activities
+    .map((a,i)=> a.id ? `<option value="${i}">${a.id} — ${a.name}</option>` : "")
+    .filter(Boolean).join("");
+  panel.innerHTML = `
+    <div class="edit-panel">
+      <div class="field-label">Reassign to activity</div>
+      <select id="${panelId}Select">${options}</select>
+      <div class="edit-actions">
+        <button class="btn-save" id="${panelId}Save">Save match</button>
+        <button class="btn-cancel" id="${panelId}Cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.getElementById(`${panelId}Select`).value = reviewItems[idx].matchIndex;
+  document.getElementById(`${panelId}Save`).addEventListener("click", ()=>{
+    const newIndex = parseInt(document.getElementById(`${panelId}Select`).value,10);
+    reviewItems[idx].matchIndex = newIndex;
+    reviewItems[idx].confidence = 100;
+    reviewItems[idx].status = "accepted";
+    rerenderFn(idx);
+    applyReviewStatus(idx, "accepted");
+  });
+  document.getElementById(`${panelId}Cancel`).addEventListener("click", ()=>{ panel.innerHTML = ""; });
+}
+
+renderReviewMiniList();
+
+/* ---- Review Queue: full-view drawer (the flagship Kranti AI experience) ---- */
+const reviewDrawerOverlay = document.getElementById("reviewDrawerOverlay");
+const drawerList = document.getElementById("drawerList");
+const drawerDetail = document.getElementById("drawerDetail");
+let drawerCurrentIdx = null;
+
+function renderDrawerList(){
+  drawerList.innerHTML = "";
+  reviewItems.forEach((item, idx)=>{
+    const card = document.createElement("div");
+    if(!item.filled){
+      card.className = "drawer-card empty-placeholder";
+      card.innerHTML = `<div class="row1"><span class="evt-id mono">${item.id}</span></div><div class="preview">Awaiting classification…</div>`;
+      drawerList.appendChild(card);
+      return;
+    }
+    const tier = confidenceTier(item.confidence);
+    card.className = "drawer-card" + (idx===drawerCurrentIdx ? " active" : "");
+    card.innerHTML = `
+      <div class="row1">
+        <span class="evt-id mono">${item.id}</span>
+        <span class="tag">${item.tag}</span>
+      </div>
+      <div class="preview">${item.preview}</div>
+      <div class="row1" style="margin-top:9px;margin-bottom:0;">
+        ${item.status ? statusChipHtml(item) : `<span class="conf-mini conf-${tier}">${item.confidence}% confidence</span>`}
+      </div>
+    `;
+    card.addEventListener("click", ()=> selectDrawerItem(idx));
+    drawerList.appendChild(card);
+  });
+}
+
+function selectDrawerItem(idx){
+  drawerCurrentIdx = idx;
+  renderDrawerList();
+  renderDrawerDetail(idx);
+}
+
+function renderDrawerDetail(idx){
+  const item = reviewItems[idx];
+  const activity = activities[item.matchIndex];
+  const tier = confidenceTier(item.confidence);
+  const wbsPath = buildWbsPath(item.matchIndex);
+
+  drawerDetail.innerHTML = `
+    <div class="drawer-agent">
+      <div class="agent-tab-head">
+        <span class="evt-id mono">${item.id}</span>
+        <span class="tag">${item.tag}</span>
+        ${statusChipHtml(item)}
+      </div>
+
+      <div>
+        <div class="field-label">Message</div>
+        <div class="message-text big">${item.message}</div>
+      </div>
+
+      <div>
+        <div class="field-label">Extracted Activity</div>
+        <div class="activity-match big">
+          <span class="activity-id mono">${activity.id}</span>
+          <span class="activity-name">${activity.name}</span>
+        </div>
+        <div class="wbs-path">${wbsPath}</div>
+      </div>
+
+      <div>
+        <div class="field-label">Agent Confidence</div>
+        <div class="confidence-row">
+          <div class="confidence-bar big"><div class="confidence-fill ${tier}" style="width:${item.confidence}%"></div></div>
+          <span class="confidence-value ${tier}">${item.confidence}% &middot; ${confidenceLabel(item.confidence)}</span>
+        </div>
+      </div>
+
+      <div class="agent-actions big">
+        <button class="btn-accept" id="drawerAccept">Accept</button>
+        <button class="btn-edit" id="drawerEdit">Edit match</button>
+        <button class="btn-decline" id="drawerDecline">Decline</button>
+      </div>
+
+      <div id="drawerEditPanel"></div>
+    </div>
+  `;
+  document.getElementById("drawerAccept").addEventListener("click", ()=> applyReviewStatus(idx, "accepted"));
+  document.getElementById("drawerDecline").addEventListener("click", ()=> applyReviewStatus(idx, "declined"));
+  document.getElementById("drawerEdit").addEventListener("click", ()=> showEditPanel(idx, "drawerEditPanel", renderDrawerDetail));
+}
+
+function openReviewDrawer(){
+  reviewDrawerOverlay.classList.add("open");
+  renderDrawerList();
+  if(drawerCurrentIdx === null){
+    const firstFilled = reviewItems.findIndex(r=>r.filled);
+    if(firstFilled >= 0) selectDrawerItem(firstFilled);
+  } else {
+    renderDrawerDetail(drawerCurrentIdx);
+  }
+}
+function closeReviewDrawer(){ reviewDrawerOverlay.classList.remove("open"); }
+
+document.getElementById("openReviewDrawer").addEventListener("click", openReviewDrawer);
+document.getElementById("closeReviewDrawer").addEventListener("click", closeReviewDrawer);
+reviewDrawerOverlay.addEventListener("click", (e)=>{ if(e.target === reviewDrawerOverlay) closeReviewDrawer(); });
+document.addEventListener("keydown", (e)=>{ if(e.key === "Escape") closeReviewDrawer(); });
+
+/* ---- Ingestion Feed ---- */
+const ingestionList = document.getElementById("ingestionList");
+document.getElementById("ingestionCount").textContent = ingestionItems.filter(i=>!i.empty).length;
+ingestionItems.forEach(item=>{
+  const card = document.createElement("div");
+  card.className = "card" + (item.empty? " empty":"");
+  card.innerHTML = item.empty ? `<span class="msg"></span>`
+    : `<span class="sender">${item.sender}</span><span class="msg">${item.msg}</span>`;
+  ingestionList.appendChild(card);
+});
+
+/* ---- Suggestions ---- */
+const suggestionsList = document.getElementById("suggestionsList");
+document.getElementById("suggestionsCount").textContent = suggestionItems.filter(i=>i.filled).length;
+suggestionItems.forEach(item=>{
+  const card = document.createElement("div");
+  card.className = "card" + (item.empty? " empty":"");
+  card.innerHTML = `<span class="msg">${item.msg||""}</span>`;
+  suggestionsList.appendChild(card);
+});
+
+/* collapse / expand the Ingestion Feed & Suggestions accordions (Review Queue uses the drawer instead) */
+document.querySelectorAll(".collapse-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const section = btn.closest(".ai-section");
+    const collapsed = section.classList.toggle("collapsed");
+    section.classList.toggle("expanded", !collapsed);
+    btn.innerHTML = collapsed ? "&#9656;" : "&#9662;";
+  });
+});
+
+/* =========================================================
+   VIEW ROUTER  (auth -> navigator -> dashboard)
+   ========================================================= */
+function showView(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-"+name).classList.add("active");
+}
+
+/* ---- Auth screen: sliding Sign In / Create Account panel ---- */
+const authCard = document.getElementById("authCard");
+document.getElementById("toSignIn").addEventListener("click", ()=> authCard.classList.remove("right-active"));
+document.getElementById("toSignUp").addEventListener("click", ()=> authCard.classList.add("right-active"));
+document.getElementById("signInForm").addEventListener("submit", (e)=>{ e.preventDefault(); showView("navigator"); });
+document.getElementById("signUpForm").addEventListener("submit", (e)=>{ e.preventDefault(); showView("navigator"); });
+
+/* ---- Navigator screen ---- */
+document.querySelectorAll(".nav-option").forEach(btn=>{
+  btn.addEventListener("click", ()=> showView(btn.dataset.goto));
+});
+document.getElementById("navSignOut").addEventListener("click", ()=> showView("auth"));
+
+/* ---- Dashboard: back to navigator ---- */
+document.getElementById("backToNavigator").addEventListener("click", ()=> showView("navigator"));
+</script>
+</body>
+</html>

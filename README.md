@@ -57,6 +57,64 @@ Ensure your host machine or VM has:
 * **Docker & Docker Compose**: Installed and running ([docker.com](https://www.docker.com/)).
 * **Recommended Specs**: 4 vCPU cores, 8 GB+ RAM.
 
+### Prerequisites
+- Docker Desktop
+- A Groq API key (free tier at console.groq.com)
+
+### 1. Configure environment
+
+```bash
+cp .env.example .env
+# Edit .env — add your GROQ_API_KEY at minimum
+```
+
+### 2. Start services
+
+```bash
+docker-compose up -d --build
+```
+*(Note: If you are pulling new changes from a teammate's fork, ensure you include `--build` to rebuild the frontend UI container.)*
+
+Services started:
+| Service | URL |
+|---|---|
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
+| MinIO Console | http://localhost:9001 (admin/minioadmin) |
+| FastAPI Backend | http://localhost:8000 |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| Next.js Dashboard | http://localhost:3000 |
+
+### 3. Initialize the database
+
+```bash
+# In the backend container (or with Python + venv):
+cd backend
+alembic upgrade head
+```
+
+### 4. Seed synthetic schedule & demo data
+
+```bash
+python scratch/drop_tables.py      # Clears existing data
+python scripts/seed_schedule.py    # Loads schedule & shifts dates
+python scripts/seed_demo_events.py # Seeds review queue for UI demo
+```
+
+This loads synthetic L5/L6 plan activities (shifted to August 2026), builds the semantic embedding index, and populates the UI with realistic events.
+
+### 5. Run the end-to-end simulation (Optional)
+
+```bash
+python scripts/run_demo.py
+```
+
+Injects 3 synthetic messages (free text, XLSX, scanned diary simulation), runs the full pipeline, and adds to the review queue.
+
+### 6. Open the reviewer dashboard
+
+Navigate to **http://localhost:3000** to view the unified dashboard.
+
 ---
 
 ## 🚀 Step-by-Step Setup Guide
@@ -93,7 +151,7 @@ DATABASE_URL_SYNC=postgresql+psycopg2://kranti:kranti_secret@localhost:5432/sih2
 REDIS_URL=redis://localhost:6379/0
 
 # LLM Extraction: NVIDIA NIM (Primary)
-NVIDIA_API_KEY=
+NVIDIA_API_KEY=<YOUR_API_KEY_HERE>
 NVIDIA_NIM_MODEL=
 # Meta WhatsApp Cloud API (Pre-configured for prototype testing)
 WHATSAPP_APP_SECRET=
@@ -198,6 +256,86 @@ pytest tests/ -v
 
 # Or run tests directly inside the Docker backend container:
 docker compose exec backend pytest tests/ -v
+
+Tests use SQLite in-memory — no Postgres/Redis needed.
+
+Key test files:
+- `tests/test_extraction_normalizer.py` — LLM extractor parsing and normalization
+- `tests/test_matching.py` — Fuzzy + semantic + confidence routing
+- `tests/test_webhook_security.py` — HMAC validation
+
+---
+
+## Key API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/webhooks/whatsapp` | Meta verification challenge |
+| `POST` | `/webhooks/whatsapp` | Receive WhatsApp messages |
+| `GET` | `/api/v1/events` | List progress events |
+| `GET` | `/api/v1/events/{id}` | Event detail + match candidates |
+| `GET` | `/api/v1/review/queue` | Events pending review |
+| `POST` | `/api/v1/review/{id}/accept` | Accept match |
+| `POST` | `/api/v1/review/{id}/edit` | Correct to different activity |
+| `POST` | `/api/v1/review/{id}/decline` | Decline event |
+| `POST` | `/api/v1/review/{id}/confirm_new` | Confirm as new field activity |
+| `GET` | `/api/v1/schedule/activities` | List plan activities |
+| `POST` | `/api/v1/schedule/activities` | Create new plan activity |
+| `GET` | `/api/v1/schedule/export-xer` | Download updated XER |
+| `GET` | `/api/v1/memory/query?q=...` | Semantic memory search |
+| `GET` | `/api/v1/memory/export` | Export Parquet + CSV + SCHEMA.md |
+
+Full interactive docs at `http://localhost:8000/docs`.
+
+---
+
+## Repository Structure
+
+```
+c:\coding\Team Kranti\
+├── backend/
+│   ├── main.py                     # FastAPI app
+│   ├── core/config.py              # Pydantic settings
+│   ├── db/
+│   │   ├── models.py               # SQLAlchemy ORM (7 tables)
+│   │   └── session.py              # Async session factory
+│   ├── api/v1/
+│   │   ├── webhook.py              # WhatsApp webhook
+│   │   ├── events.py               # Events list/detail
+│   │   ├── review.py               # Human review actions
+│   │   ├── schedule.py             # Schedule + XER export
+│   │   └── memory.py               # Institutional memory
+│   ├── services/
+│   │   ├── ingestion/              # WhatsApp parser, media download/upload
+│   │   ├── extraction/             # ASR, OCR, LLM extractor, normalizer
+│   │   ├── matching/               # Fuzzy, semantic, confidence scoring
+│   │   ├── scheduling/             # XER parser/writer, schedule service
+│   │   └── institutional_memory/   # ChromaDB store, dataset exporter
+│   ├── workers/
+│   │   ├── celery_app.py           # Celery configuration
+│   │   └── tasks.py                # Pipeline orchestration task
+│   ├── security/hmac.py            # HMAC-SHA256 validation
+│   └── alembic/                    # DB migrations
+├── frontend/                       # Next.js 15 reviewer dashboard
+│   ├── app/
+│   │   ├── page.tsx                # Unified App Dashboard (Gantt, Review Queue, AI Ingestion)
+│   │   ├── navigator/              # Project selection page
+│   │   └── globals.css             # Main styling
+│   └── components/                 # Shared UI elements
+├── data/
+│   ├── SCHEMA.md                   # Dataset data dictionary
+│   └── synthetic/                  # Synthetic XER, messages, sender profiles
+├── scripts/
+│   ├── seed_schedule.py            # Load XER + build embedding index
+│   ├── seed_demo_events.py         # Generate synthetic events for demo
+│   └── run_demo.py                 # End-to-end demo runner
+├── tests/                          # pytest test suite
+├── docker-compose.yml
+├── Dockerfile.backend
+├── Dockerfile.worker
+├── .env.example
+└── .ai/                            # Project memory (architecture docs)
 ```
 
 ---

@@ -123,6 +123,26 @@ def main():
         print(f"⚠ XER parse failed ({exc}). Using hardcoded synthetic activities.")
         activities = _get_hardcoded_activities(settings.project_id)
 
+    # Shift all dates to August 2026 for prototyping
+    from datetime import datetime, timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    min_date = None
+    for act in activities:
+        d = act.get("planned_start")
+        if d:
+            if not min_date or d < min_date:
+                min_date = d
+
+    if min_date:
+        target_date = datetime(2026, 8, 1, tzinfo=IST)
+        delta = target_date - min_date
+        print(f"  Shifting dates by {delta.days} days to align with August 2026...")
+        for act in activities:
+            if act.get("planned_start"): act["planned_start"] += delta
+            if act.get("planned_finish"): act["planned_finish"] += delta
+            if act.get("actual_start"): act["actual_start"] += delta
+            if act.get("actual_finish"): act["actual_finish"] += delta
+
     # Upsert into plan_activities
     inserted = 0
     skipped = 0

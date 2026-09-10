@@ -23,6 +23,14 @@ export function getAuthToken(): string {
   return process.env.NEXT_PUBLIC_REVIEWER_TOKEN || "dev-insecure-token";
 }
 
+export function clearAuthToken() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("reviewer_token");
+    localStorage.removeItem("reviewer_name");
+    localStorage.removeItem("reviewer_role");
+  }
+}
+
 // Legacy export kept for pages that haven't migrated yet
 export const AUTH_TOKEN = "";
 

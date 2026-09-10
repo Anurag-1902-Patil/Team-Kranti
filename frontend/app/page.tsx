@@ -1,413 +1,652 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  Activity,
-  AlertTriangle,
-  ArrowUpRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  Layers,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react";
-import { fetchScheduleHealth, fetchProgressEvents, apiFetch } from "@/lib/api";
-import type { ProgressEvent, ProgressEventList, ScheduleHealth } from "@/lib/types";
-import ProvenanceBadge from "@/components/ProvenanceBadge";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch, API_BASE, getAuthToken, fetchProgressEvents } from "@/lib/api";
+import type { PlanActivity, ProgressEvent } from "@/lib/types";
+import { MOCK_ACTIVITIES, MOCK_REVIEW_ITEMS, MOCK_INGESTION } from "@/lib/mockData";
 
-export default function OverviewPage() {
-  const [health, setHealth] = useState<ScheduleHealth | null>(null);
-  const [recentEvents, setRecentEvents] = useState<ProgressEvent[]>([]);
-  const [reviewCount, setReviewCount] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-  const [mounted, setMounted] = useState(false);
+/* ─── types ─── */
+interface ActivityListResponse { total: number; items: PlanActivity[] }
+interface ReviewItem {
+  id: string; preview: string; tag: string; message: string;
+  activityId: string; activityName: string; confidence: number;
+  status: "accepted" | "declined" | null; eventId: string;
+}
+interface IngestionItem { sender: string; msg: string; }
 
-  useEffect(() => {
-    setMounted(true);
+/* ─── helpers ─── */
+const MONTH_W = 160;
+
+function formatDate(iso: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
+}
+
+function buildTimeline(activities: PlanActivity[]) {
+  const starts = activities.map(a => a.planned_start ? new Date(a.planned_start).getTime() : null).filter(Boolean) as number[];
+  const ends   = activities.map(a => a.planned_finish ? new Date(a.planned_finish).getTime() : null).filter(Boolean) as number[];
+  if (!starts.length) return { origin: new Date(), months: [] as {label:string;quarter:string}[], totalW: 0 };
+  const minT = Math.min(...starts);
+  const maxT = Math.max(...ends);
+  const origin = new Date(minT);
+  origin.setDate(1);
+  const end = new Date(maxT);
+  const months: { label: string; quarter: string }[] = [];
+  const cursor = new Date(origin);
+  while (cursor <= end || months.length < 12) {
+    const q = Math.floor(cursor.getMonth() / 3) + 1;
+    months.push({
+      label: cursor.toLocaleString("en-GB", { month: "short" }),
+      quarter: `Q${q} ${cursor.getFullYear()}`,
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return { origin, months, totalW: months.length * MONTH_W };
+}
+
+function monthOffset(origin: Date, iso: string) {
+  const d = new Date(iso);
+  const monthDiff = (d.getFullYear() - origin.getFullYear()) * 12 + (d.getMonth() - origin.getMonth());
+  const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const fraction = (d.getDate() - 1) / daysInMonth;
+  return monthDiff + fraction;
+}
+
+function confidenceTier(v: number) { return v >= 85 ? "high" : v >= 65 ? "med" : "low"; }
+
+/* ─── component ─── */
+export default function DashboardPage() {
+  const router = useRouter();
+  const [activities, setActivities] = useState<PlanActivity[]>([]);
+  const [selected, setSelected] = useState<PlanActivity | null>(null);
+  const [activeTab, setActiveTab] = useState("general");
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
+  const [ingestion, setIngestion] = useState<IngestionItem[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerSelected, setDrawerSelected] = useState<ReviewItem | null>(null);
+  const [aiView, setAiView] = useState<"list" | "detail">("list");
+  const [aiSelected, setAiSelected] = useState<ReviewItem | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [reviewCollapsed, setReviewCollapsed] = useState(false);
+  const [ingestionCollapsed, setIngestionCollapsed] = useState(false);
+  const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
+  const [memoryCollapsed, setMemoryCollapsed] = useState(false);
+  const [timeline, setTimeline] = useState<ReturnType<typeof buildTimeline> | null>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const ganttScrollRef = useRef<HTMLDivElement>(null);
+  const syncRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadDataset = () => {
+    const csvContent = "event_id,activity_name,confidence,status,date\nEVT-001,Excavation Work,85,accepted,2026-08-15\nEVT-002,Pipe Welding,92,accepted,2026-08-16\nEVT-003,Safety Inspection,60,declined,2026-08-17";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "kranti_institutional_memory.csv";
+    link.click();
+  };
+
+  const handleUploadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      alert(`Dataset "${e.target.files[0].name}" uploaded successfully for predictive insights!`);
+    }
+  };
+
+  /* sync scroll */
+  const onTableScroll = useCallback(() => {
+    if (syncRef.current || !ganttScrollRef.current || !tableScrollRef.current) return;
+    syncRef.current = true;
+    ganttScrollRef.current.scrollTop = tableScrollRef.current.scrollTop;
+    syncRef.current = false;
+  }, []);
+  const onGanttScroll = useCallback(() => {
+    if (syncRef.current || !tableScrollRef.current || !ganttScrollRef.current) return;
+    syncRef.current = true;
+    tableScrollRef.current.scrollTop = ganttScrollRef.current.scrollTop;
+    syncRef.current = false;
   }, []);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [healthData, eventsData, queueData] = await Promise.allSettled([
-        fetchScheduleHealth("TEST"),
-        fetchProgressEvents(1, 8),
-        apiFetch<ProgressEventList>("/api/v1/review/queue?page_size=1"),
-      ]);
+  useEffect(() => {
+    // Load activities from backend
+    apiFetch<ActivityListResponse>("/api/v1/schedule/activities?page=1&page_size=100")
+      .then(d => {
+        const items = d.items || [];
+        setActivities(items);
+        setTimeline(buildTimeline(items));
+        if (items.length) setSelected(items[0]);
+      })
+      .catch(err => {
+        console.error("Failed to load activities:", err);
+      });
 
-      if (healthData.status === "fulfilled") setHealth(healthData.value);
-      if (eventsData.status === "fulfilled") setRecentEvents(eventsData.value.items || []);
-      if (queueData.status === "fulfilled") setReviewCount(queueData.value.total || 0);
-      setLastRefreshed(new Date());
-    } catch {
-      // Graceful local handling
-    } finally {
-      setLoading(false);
-    }
+    // Load review / ingestion from backend
+    fetchProgressEvents(1, 20)
+      .then(r => {
+        const items = r.items || [];
+        const rev: ReviewItem[] = items
+          .filter((e: ProgressEvent) => !e.reviewed_by_planner &&
+            (e.match_status === "low_confidence_review" || e.match_status === "matched" || e.match_status === "pending_match" || e.match_status === "unmatched_new"))
+          .slice(0, 7)
+          .map((e: ProgressEvent) => ({
+            id: `EVT-${String(e.id).padStart(4, "0")}`,
+            preview: (e.activity_description_extracted || e.activity_description_raw || "").slice(0, 50) + "…",
+            message: e.activity_description_extracted || e.activity_description_raw || "No description",
+            tag: e.discipline ? e.discipline.toUpperCase() : "GENERAL",
+            activityId: e.activity_id_plan || "—",
+            activityName: e.activity_description_extracted?.slice(0, 40) || "Unknown Activity",
+            confidence: Math.round((e.confidence_score || 0.7) * 100),
+            status: null,
+            eventId: e.id,
+          }));
+        setReviewItems(rev);
+        const ing = items.slice(0, 4).map((e: ProgressEvent) => ({
+          sender: e.supervisor_name || "Field Team",
+          msg: (e.activity_description_raw || "").slice(0, 48) + "…",
+        }));
+        setIngestion(ing);
+      })
+      .catch(err => {
+        console.error("Failed to load events:", err);
+      });
+  }, []);
+
+  async function applyStatus(item: ReviewItem, status: "accepted" | "declined") {
+    try {
+      await fetch(`${API_BASE}/api/v1/events/${item.eventId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getAuthToken()}` },
+        body: JSON.stringify({ decision: status }),
+      });
+    } catch {}
+    setReviewItems(prev => prev.map(r => r.id === item.id ? { ...r, status } : r));
+    if (aiSelected?.id === item.id) setAiSelected(prev => prev ? { ...prev, status } : prev);
+    if (drawerSelected?.id === item.id) setDrawerSelected(prev => prev ? { ...prev, status } : prev);
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  /* ─── layout constants ─── */
+  const ROW_H = 26;
 
-  const progressActual = health?.overall_progress_pct ?? 42.5;
-  const progressPlanned = health?.planned_progress_pct ?? 48.0;
-  const varianceDays = health?.critical_path_slippage_days ?? 4.0;
-  const activeBlockers = health?.active_blockers_count ?? 3;
+  /* ─── Gantt bar renderer ─── */
+  function renderBar(act: PlanActivity) {
+    if (!timeline || !act.planned_start || !act.planned_finish) return null;
+    const l = monthOffset(timeline.origin, act.planned_start) * MONTH_W;
+    const r = monthOffset(timeline.origin, act.planned_finish) * MONTH_W;
+    const w = Math.max(r - l, 4);
+    const pct = act.actual_percent_complete || act.percent_complete_plan || 0;
+    const isCritical = act.is_critical || (act.total_float_days != null && act.total_float_days <= 0);
+    return (
+      <div style={{ position: "absolute", left: l, width: w, top: 7, height: 9, borderRadius: 5,
+        background: pct >= 100 ? "var(--success)" : isCritical ? "var(--danger)" : "var(--ink)",
+        overflow: "hidden" }} title={`${act.activity_name} — ${pct}%`}>
+        {pct > 0 && (
+          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(pct,100)}%`,
+            background: "rgba(217,130,43,0.7)", borderRadius: 5 }} />
+        )}
+      </div>
+    );
+  }
+
+  const quarters = timeline ? (() => {
+    const map: Record<string, string[]> = {};
+    const order: string[] = [];
+    timeline.months.forEach(m => {
+      if (!map[m.quarter]) { map[m.quarter] = []; order.push(m.quarter); }
+      map[m.quarter].push(m.label);
+    });
+    return order.map(q => ({ label: q, months: map[q] }));
+  })() : [];
+
+  /* ─── AI panel detail view ─── */
+  function AiDetailView({ item, onBack, inDrawer }: { item: ReviewItem, onBack: () => void, inDrawer?: boolean }) {
+    const tier = confidenceTier(item.confidence);
+    const big = inDrawer;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, animation: "fade-in .15s ease" }}>
+        {!inDrawer && (
+          <button onClick={onBack} style={{ alignSelf: "flex-start", background: "none", border: "none",
+            color: "var(--ai-text-soft)", fontSize: 11.5, fontWeight: 500, cursor: "pointer",
+            padding: "2px 0", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit" }}>
+            ← Back to queue
+          </button>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ai-text-soft)", fontFamily: "'IBM Plex Mono',monospace" }}>{item.id}</span>
+          <span style={{ fontSize: 9, fontWeight: 600, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20, border: "1px solid var(--ai-border)" }}>{item.tag}</span>
+          {item.status && (
+            <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              background: item.status === "accepted" ? "var(--ai-text)" : "transparent",
+              color: item.status === "accepted" ? "#fff" : "var(--ai-muted)",
+              border: item.status === "accepted" ? "none" : "1px solid var(--ai-border-strong)" }}>
+              {item.status === "accepted" ? "Accepted" : "Declined"}
+            </span>
+          )}
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 5 }}>Message</div>
+          <div style={{ fontSize: big ? 14 : 12.5, lineHeight: 1.5, color: "var(--ai-text)", background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: big ? "16px 18px" : "10px 11px" }}>{item.message}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 5 }}>Extracted Activity</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: big ? "13px 15px" : "9px 11px" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ai-text)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 5, fontFamily: "'IBM Plex Mono',monospace" }}>{item.activityId}</span>
+            <span style={{ fontSize: 12.5, color: "var(--ai-text)", fontWeight: 500 }}>{item.activityName}</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 5 }}>Agent Confidence</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, height: big ? 8 : 6, background: "var(--ai-surface3)", border: "1px solid var(--ai-border)", borderRadius: 20, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${item.confidence}%`, borderRadius: 20,
+                background: tier === "high" ? "var(--ai-text)" : tier === "med" ? "var(--ai-border-strong)" : "var(--ai-muted)" }} />
+            </div>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: tier === "high" ? "var(--ai-text)" : tier === "med" ? "var(--ai-text-soft)" : "var(--ai-muted)", whiteSpace: "nowrap" }}>
+              {item.confidence}% · {tier === "high" ? "High" : tier === "med" ? "Medium" : "Low"}
+            </span>
+          </div>
+        </div>
+        {!item.status && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => applyStatus(item, "accepted")} style={{ flex: 1, fontFamily: "inherit", fontSize: big ? 13 : 12, fontWeight: 600, padding: big ? "11px 10px" : "9px 8px", borderRadius: 7, border: "none", cursor: "pointer", background: "var(--ai-text)", color: "#fff" }}>Accept</button>
+            <button onClick={() => { setEditMode(true); }} style={{ flex: 1, fontFamily: "inherit", fontSize: big ? 13 : 12, fontWeight: 600, padding: big ? "11px 10px" : "9px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "transparent", color: "var(--ai-text-soft)" }}>Edit match</button>
+            <button onClick={() => applyStatus(item, "declined")} style={{ flex: 1, fontFamily: "inherit", fontSize: big ? 13 : 12, fontWeight: 600, padding: big ? "11px 10px" : "9px 8px", borderRadius: 7, border: "1px solid var(--ai-border-strong)", cursor: "pointer", background: "transparent", color: "var(--ai-text-soft)" }}>Decline</button>
+          </div>
+        )}
+        {editMode && (
+          <div style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: 11, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", textTransform: "uppercase", letterSpacing: ".5px" }}>Reassign to activity</div>
+            <select style={{ fontFamily: "inherit", fontSize: 12, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", background: "var(--ai-surface)", color: "var(--ai-text)" }}>
+              {activities.filter(a => a.activity_id).map(a => (
+                <option key={a.activity_id} value={a.activity_id}>{a.activity_id} — {a.activity_name}</option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { applyStatus(item, "accepted"); setEditMode(false); }} style={{ flex: 1, fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-text)", cursor: "pointer", background: "var(--ai-text)", color: "#fff" }}>Save match</button>
+              <button onClick={() => setEditMode(false)} style={{ flex: 1, fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "transparent", color: "var(--ai-text-soft)" }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ─── Details grid ─── */
+  function DetailsGrid({ act }: { act: PlanActivity }) {
+    if (activeTab === "general") return (
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 140px 1fr", gap: "10px 18px", maxWidth: 780, fontSize: 12.5 }}>
+        {[
+          ["Activity ID", act.activity_id || "—"],
+          ["Activity Name", act.activity_name],
+          ["Activity Type", act.is_critical ? "Critical Task" : "Task"],
+          ["% Complete", `${act.actual_percent_complete || act.percent_complete_plan || 0}%`],
+          ["Start", formatDate(act.planned_start || "")],
+          ["Finish", formatDate(act.planned_finish || "")],
+          ["Original Duration", act.original_duration_days ? `${act.original_duration_days}d` : "—"],
+          ["Remaining Duration", act.remaining_duration_days ? `${act.remaining_duration_days}d` : "—"],
+          ["WBS Code", act.wbs_code || "—"],
+          ["Discipline", act.discipline || "General"],
+        ].map(([label, value]) => (
+          <React.Fragment key={label}>
+            <label style={{ color: "var(--muted)", alignSelf: "center", fontWeight: 500 }}>{label}</label>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface-alt)", padding: "6px 10px", minHeight: 14, fontFamily: label === "Activity ID" || label.includes("Duration") || label.includes("%") || label === "WBS Code" || label === "Start" || label === "Finish" ? "'IBM Plex Mono',monospace" : undefined, fontSize: 12 }}>{value}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    );
+    if (activeTab === "status") return (
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 140px 1fr", gap: "10px 18px", maxWidth: 780, fontSize: 12.5 }}>
+        {[
+          ["Status", (act.actual_percent_complete || 0) > 0 ? "In Progress" : "Not Started"],
+          ["Data Date", new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"})],
+          ["Physical % Complete", `${act.actual_percent_complete || 0}%`],
+          ["Schedule % Complete", `${act.percent_complete_plan || 0}%`],
+          ["Total Float", `${act.total_float_days ?? 0}d`],
+          ["Critical", act.is_critical ? "Yes" : "No"],
+        ].map(([label, value]) => (
+          <React.Fragment key={label}>
+            <label style={{ color: "var(--muted)", alignSelf: "center", fontWeight: 500 }}>{label}</label>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface-alt)", padding: "6px 10px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12 }}>{value}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    );
+    if (activeTab === "resources") return (
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 140px 1fr", gap: "10px 18px", maxWidth: 780, fontSize: 12.5 }}>
+        {[
+          ["Resource", act.contractor_code || "Field Crew"],
+          ["Role", act.discipline || "Site Labor"],
+          ["Budgeted Units", "120h"], ["Actual Units", "0h"],
+        ].map(([label, value]) => (
+          <React.Fragment key={label}>
+            <label style={{ color: "var(--muted)", alignSelf: "center", fontWeight: 500 }}>{label}</label>
+            <div style={{ border: "1px solid var(--border)", borderRadius: 7, background: "var(--surface-alt)", padding: "6px 10px", fontSize: 12 }}>{value}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    );
+    return <div style={{ color: "var(--muted)", fontSize: 12.5 }}>No notebook topics recorded for &ldquo;{act.activity_name}&rdquo;.</div>;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-100">
-              Project Overview &amp; Execution Controls
-            </h1>
-            <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-950 text-cyan-400 border border-cyan-800/60">
-              L5/L6 Grounded
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Oil India Pipeline Expansion (Package OIL-EXP-2026) • Field Actuals linked to Primavera P6 Baseline
-          </p>
-        </div>
+    <div style={{ display: "flex", width: "100vw", height: "100vh", padding: 16, gap: 16, boxSizing: "border-box", background: "var(--bg)" }}>
 
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-slate-400 font-mono" suppressHydrationWarning>
-            Updated: {mounted ? lastRefreshed.toLocaleTimeString() : "--:--:--"}
-          </span>
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="px-2.5 py-1.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-300 flex items-center gap-1.5 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-cyan-400" : ""}`} />
-            Refresh
+      {/* ── Kranti P1 frame ── */}
+      <div style={{ flex: 1, minWidth: 0, border: "1px solid var(--border)", borderRadius: 14, background: "var(--surface)", boxShadow: "0 1px 2px rgba(16,24,38,.04), 0 6px 20px rgba(16,24,38,.06)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* titlebar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--accent)", display: "inline-block", transform: "rotate(45deg)" }} />
+          <h1 style={{ fontSize: 14.5, fontWeight: 600, margin: 0 }}>Kranti P1</h1>
+          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400, marginLeft: 2 }}>OIL India — Pipeline Expansion Phase 3</span>
+          <button onClick={() => router.push("/navigator")} style={{ marginLeft: "auto", fontFamily: "inherit", fontSize: 11.5, fontWeight: 500, color: "var(--ink-soft)", background: "var(--surface-alt)", border: "1px solid var(--border)", borderRadius: 20, padding: "6px 13px", cursor: "pointer" }}>
+            ↩ Projects
           </button>
         </div>
-      </div>
 
-      {/* 5 Real Stat Cards (§2.1) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        {/* Stat 1: Overall Progress */}
-        <div className="pm-card p-4">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium uppercase tracking-wider font-mono">Schedule Progress</span>
-            <Activity className="w-4 h-4 text-cyan-400" />
+        {/* menubar */}
+        <div style={{ display: "flex", gap: 2, padding: "6px 12px", borderBottom: "1px solid var(--border)", background: "var(--surface-alt)", flexShrink: 0 }}>
+          {["File","Edit","View","Project","Enterprise","Tools","Help"].map(m => (
+            <button key={m} style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, padding: "6px 12px", background: "transparent", color: "var(--ink-soft)", border: "none", borderRadius: 7, cursor: "default" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background="#e9edf3"; (e.currentTarget as HTMLElement).style.color="var(--ink)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background="transparent"; (e.currentTarget as HTMLElement).style.color="var(--ink-soft)"; }}>
+              {m}
+            </button>
+          ))}
+        </div>
+
+        {/* main row: activity table + gantt */}
+        <div style={{ flex: "1 1 auto", display: "flex", minHeight: 0, borderBottom: "1px solid var(--border)" }}>
+
+          {/* activity table pane */}
+          <div style={{ width: "40%", minWidth: 260, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <div ref={tableScrollRef} onScroll={onTableScroll} style={{ overflow: "auto", flex: "1 1 auto", minHeight: 0 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, tableLayout: "fixed" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 64, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px", whiteSpace: "nowrap" }}>Activity ID</th>
+                    <th style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Activity Name</th>
+                    <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px", whiteSpace: "nowrap" }}>Orig</th>
+                    <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px", whiteSpace: "nowrap" }}>Rem</th>
+                    <th style={{ width: 38, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px", whiteSpace: "nowrap" }}>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activities.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: "18px 12px", color: "var(--muted)", fontSize: 12, textAlign: "center" }}>No schedule loaded — import a P6 XER file.</td></tr>
+                  )}
+                  {activities.map((act) => {
+                    const isSel = selected?.id === act.id;
+                    const pct = act.actual_percent_complete || act.percent_complete_plan || 0;
+                    return (
+                      <tr key={act.id} onClick={() => { setSelected(act); setActiveTab("general"); }}
+                        style={{ cursor: "pointer", background: isSel ? "var(--accent-soft)" : undefined, boxShadow: isSel ? "inset 3px 0 0 var(--accent)" : undefined, transition: "background .1s ease" }}>
+                        <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{act.activity_id}</td>
+                        <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ flex: "0 0 auto", width: 12, textAlign: "center", fontSize: 9, color: "var(--muted)" }}>●</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.activity_name}</span>
+                          </div>
+                        </td>
+                        <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{act.original_duration_days ? `${act.original_duration_days}d` : "—"}</td>
+                        <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{act.remaining_duration_days ? `${act.remaining_duration_days}d` : "—"}</td>
+                        <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right", fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{pct}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-100 font-mono">{progressActual}%</span>
-            <span className="text-[11px] text-slate-400 font-mono">vs {progressPlanned}% plan</span>
-          </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-            <div
-              className="bg-cyan-500 h-full rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, progressActual)}%` }}
-            />
+
+          {/* Gantt pane */}
+          <div style={{ flex: "1 1 auto", minWidth: 0, display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+            <div ref={ganttScrollRef} onScroll={onGanttScroll} style={{ overflow: "auto", flex: "1 1 auto", minHeight: 0, position: "relative" }}>
+              {timeline && (
+                <div style={{ position: "relative", width: timeline.totalW, minWidth: "100%" }}>
+                  {/* header */}
+                  <div style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface-alt)", width: timeline.totalW }}>
+                    <div style={{ display: "flex" }}>
+                      {quarters.map(q => (
+                        <div key={q.label} style={{ width: q.months.length * MONTH_W, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border-strong)", fontSize: 10.5, fontWeight: 600, color: "var(--ink-soft)", textAlign: "center", padding: "5px 0", whiteSpace: "nowrap" }}>
+                          {q.label}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex" }}>
+                      {timeline.months.map((m, i) => (
+                        <div key={i} style={{ width: MONTH_W, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", fontSize: 9.5, textAlign: "center", color: "var(--muted)", padding: "3px 0", flexShrink: 0 }}>
+                          {m.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* body rows */}
+                  <div style={{ position: "relative", width: timeline.totalW }}>
+                    {activities.map((act) => {
+                      const isSel = selected?.id === act.id;
+                      return (
+                        <div key={act.id} onClick={() => { setSelected(act); setActiveTab("general"); }}
+                          style={{ height: ROW_H, position: "relative", borderBottom: "1px solid var(--border)", background: isSel ? "var(--accent-soft)" : undefined, cursor: "pointer", width: timeline.totalW }}>
+                          {/* vertical grid lines */}
+                          {timeline.months.map((_, i) => (
+                            <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: i * MONTH_W, borderLeft: i % 3 === 0 ? "1px solid var(--border-strong)" : "1px solid #eef0f4" }} />
+                          ))}
+                          {renderBar(act)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Stat 2: Critical Path Slippage */}
-        <div className="pm-card p-4">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium uppercase tracking-wider font-mono">Critical Path Slippage</span>
-            {varianceDays > 0 ? (
-              <TrendingDown className="w-4 h-4 text-amber-400" />
-            ) : (
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
+        {/* details pane */}
+        <div style={{ flex: "0 0 auto", maxHeight: "36%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ display: "flex", gap: 4, padding: "8px 18px 0", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            {["general","status","resources","notebook"].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ fontFamily: "inherit", fontSize: 12, fontWeight: activeTab === tab ? 600 : 500, padding: "7px 4px 9px", marginRight: 14, background: "none", color: activeTab === tab ? "var(--ink)" : "var(--muted)", border: "none", borderBottom: `2px solid ${activeTab === tab ? "var(--accent)" : "transparent"}`, cursor: "default" }}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: "1 1 auto", overflow: "auto", padding: 18 }}>
+            {selected ? <DetailsGrid act={selected} /> : <div style={{ color: "var(--muted)", fontSize: 12.5 }}>Select an activity above to view its details.</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Kranti AI frame ── */}
+      <div style={{ width: 300, flexShrink: 0, border: "1px solid var(--ai-border)", borderRadius: 14, background: "var(--ai-bg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 1px 2px rgba(16,24,38,.04), 0 6px 20px rgba(16,24,38,.06)" }}>
+
+        {/* ai titlebar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 18px", borderBottom: "1px solid var(--ai-border)", flexShrink: 0, background: "var(--ai-bg)" }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: "var(--ai-text)", display: "inline-block", transform: "rotate(45deg)" }} />
+          <h1 style={{ fontSize: 14.5, fontWeight: 600, margin: 0, color: "var(--ai-text)" }}>Kranti AI</h1>
+        </div>
+
+        <div style={{ flex: "1 1 auto", overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
+
+          {/* Review Queue section */}
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: reviewCollapsed ? "0 0 auto" : "1 1 230px", minHeight: reviewCollapsed ? undefined : 170, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: reviewCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
+              <button onClick={() => setReviewCollapsed(!reviewCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center", transition: "transform .15s ease" }}>
+                {reviewCollapsed ? "▶" : "▾"}
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Review Queue</span>
+              <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20 }}>{reviewItems.filter(r => !r.status).length}</span>
+              <button onClick={() => { setDrawerOpen(true); setDrawerSelected(null); }} title="Open full review queue" style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 13, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>↗</button>
+            </div>
+            {!reviewCollapsed && (
+              <div style={{ overflow: "hidden", flex: "1 1 auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                {aiView === "detail" && aiSelected ? (
+                  <div style={{ overflow: "auto", flex: "1 1 auto", paddingTop: 4 }}>
+                    <AiDetailView item={aiSelected} onBack={() => { setAiView("list"); setAiSelected(null); setEditMode(false); }} />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: "1 1 auto", minHeight: 0, paddingTop: 4 }}>
+                    {reviewItems.map(item => {
+                      const tier = confidenceTier(item.confidence);
+                      return (
+                        <div key={item.id} onClick={() => { setAiSelected(item); setAiView("detail"); setEditMode(false); }}
+                          style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "9px 10px", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", minHeight: 24, transition: "border-color .12s ease" }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", flexShrink: 0, fontFamily: "'IBM Plex Mono',monospace" }}>{item.id}</span>
+                          <span style={{ fontSize: 11.5, color: "var(--ai-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{item.preview}</span>
+                          <span style={{ fontSize: 9, fontWeight: 600, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20, flexShrink: 0, whiteSpace: "nowrap", border: "1px solid var(--ai-border)" }}>{item.tag}</span>
+                          {item.status ? (
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, flexShrink: 0, background: item.status === "accepted" ? "var(--ai-text)" : "transparent", color: item.status === "accepted" ? "#fff" : "var(--ai-muted)", border: item.status === "accepted" ? "none" : "1px solid var(--ai-border-strong)" }}>
+                              {item.status === "accepted" ? "✓" : "✗"}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 9.5, fontWeight: 600, flexShrink: 0, padding: "2px 7px", borderRadius: 20, border: "1px solid transparent", color: tier === "high" ? "#fff" : tier === "med" ? "var(--ai-text)" : "var(--ai-text-soft)", background: tier === "high" ? "var(--ai-text)" : tier === "med" ? "var(--ai-border-strong)" : "var(--ai-surface2)" }}>
+                              {item.confidence}%
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {reviewItems.length === 0 && <div style={{ color: "var(--ai-muted)", fontSize: 12, padding: "10px 0" }}>No pending review items.</div>}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold font-mono ${varianceDays > 0 ? "text-amber-400" : "text-emerald-400"}`}>
-              {varianceDays > 0 ? `+${varianceDays}d` : `${varianceDays}d`}
-            </span>
-            <span className="text-[11px] text-slate-400">delay</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2 truncate">
-            Float consumed: {health?.average_float_days ? `${Math.round(health.average_float_days)}d remaining` : "Float critical"}
-          </p>
-        </div>
 
-        {/* Stat 3: Total Field Updates */}
-        <div className="pm-card p-4">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium uppercase tracking-wider font-mono">Ingested Updates</span>
-            <Layers className="w-4 h-4 text-sky-400" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-100 font-mono">
-              {health?.total_activities ? health.total_activities * 3 : recentEvents.length || 64}
-            </span>
-            <span className="text-[11px] text-emerald-400 font-mono">Active</span>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2 truncate">
-            Multi-modal WhatsApp &amp; daily logs
-          </p>
-        </div>
-
-        {/* Stat 4: Review Queue Pending */}
-        <div className="pm-card p-4">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium uppercase tracking-wider font-mono">Review Queue</span>
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-amber-400 font-mono">{reviewCount}</span>
-            <span className="text-[11px] text-slate-400">pending</span>
-          </div>
-          <Link
-            href="/review"
-            className="text-[11px] text-cyan-400 hover:text-cyan-300 font-medium inline-flex items-center gap-1 mt-2"
-          >
-            Review events →
-          </Link>
-        </div>
-
-        {/* Stat 5: Active Delay Blockers */}
-        <div className="pm-card p-4">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[11px] font-medium uppercase tracking-wider font-mono">Active Blockers</span>
-            <AlertTriangle className="w-4 h-4 text-rose-400" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-rose-400 font-mono">{activeBlockers}</span>
-            <span className="text-[11px] text-slate-400">identified</span>
-          </div>
-          <Link
-            href="/analysis/delays"
-            className="text-[11px] text-rose-400/90 hover:text-rose-300 font-medium inline-flex items-center gap-1 mt-2"
-          >
-            Inspect root causes →
-          </Link>
-        </div>
-      </div>
-
-      {/* Schedule Health & Forecast Card + Milestone Tracker */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Schedule Health Card (2 cols) */}
-        <div className="lg:col-span-2 pm-card p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-cyan-400" />
-              <h2 className="text-sm font-semibold text-slate-100">Schedule Health &amp; Forecast (P6 Baseline vs EVM)</h2>
+          {/* Ingestion Feed section */}
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: ingestionCollapsed ? "0 0 auto" : "1 1 170px", minHeight: ingestionCollapsed ? undefined : 120, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: ingestionCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
+              <button onClick={() => setIngestionCollapsed(!ingestionCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {ingestionCollapsed ? "▶" : "▾"}
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Ingestion Feed</span>
+              <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20 }}>{ingestion.length}</span>
             </div>
-            <span
-              className={`px-2 py-0.5 rounded text-[11px] font-medium font-mono ${
-                health?.health_status === "critical_slippage"
-                  ? "bg-rose-950/80 text-rose-400 border border-rose-800"
-                  : health?.health_status === "minor_delay"
-                  ? "bg-amber-950/80 text-amber-400 border border-amber-800"
-                  : "bg-emerald-950/80 text-emerald-400 border border-emerald-800"
-              }`}
-            >
-              Status: {health?.health_status?.replace(/_/g, " ").toUpperCase() || "MONITORING"}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-1">
-            <div>
-              <p className="text-[11px] text-slate-400 font-mono">Planned Finish</p>
-              <p className="text-sm font-semibold text-slate-200 mt-0.5">
-                {health?.planned_project_finish || "2026-11-30"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-400 font-mono">Forecast Completion</p>
-              <p className="text-sm font-semibold text-amber-400 mt-0.5">
-                {health?.forecast_project_finish || "2026-12-05"}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-400 font-mono">Critical Activities</p>
-              <p className="text-sm font-semibold text-slate-200 mt-0.5">
-                {health?.critical_activities_count ?? 8} activities
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-slate-400 font-mono">At-Risk Activities</p>
-              <p className="text-sm font-semibold text-rose-400 mt-0.5">
-                {health?.at_risk_activities_count ?? 5} activities
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-800/80">
-            <div className="flex justify-between text-xs text-slate-300 mb-1.5">
-              <span>Overall Earned Value Progress</span>
-              <span className="font-mono text-cyan-400 font-medium">{progressActual}% / 100%</span>
-            </div>
-            <div className="w-full bg-slate-900 border border-slate-800 h-2.5 rounded-full overflow-hidden flex">
-              <div
-                className="bg-cyan-500 h-full rounded-l-full"
-                style={{ width: `${progressActual}%` }}
-              />
-              <div
-                className="bg-amber-500/40 h-full"
-                style={{ width: `${Math.max(0, progressPlanned - progressActual)}%` }}
-                title="Planned vs Actual Slippage Gap"
-              />
-            </div>
-            <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
-              <span>Actual: {progressActual}%</span>
-              <span>Baseline Plan: {progressPlanned}% (Variance: -{(progressPlanned - progressActual).toFixed(1)}%)</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Milestone Tracker (1 col) */}
-        <div className="pm-card p-5 space-y-3 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Key Milestones
-              </h2>
-              <Link href="/schedule" className="text-[11px] text-cyan-400 hover:text-cyan-300">
-                Gantt →
-              </Link>
-            </div>
-
-            <div className="divide-y divide-slate-800/60 mt-2">
-              {[
-                { name: "Civil Excavation & Foundations", date: "2026-08-04", status: "Completed", onTrack: true },
-                { name: "Hydrocarbon Spool Fabrication", date: "2026-08-18", status: "Ongoing", onTrack: true },
-                { name: "Pipe Erection (Chainage 12+450)", date: "2026-08-28", status: "Delayed +4d", onTrack: false },
-                { name: "Pump P-101/102 Alignment", date: "2026-09-12", status: "Pending", onTrack: true },
-                { name: "Hydrotest Loop HT-01", date: "2026-09-25", status: "At Risk", onTrack: false },
-              ].map((ms) => (
-                <div key={ms.name} className="py-2 flex items-center justify-between text-xs">
-                  <div className="min-w-0 pr-2">
-                    <p className="text-slate-200 truncate font-medium">{ms.name}</p>
-                    <p className="text-[10px] text-slate-400 font-mono">{ms.date}</p>
-                  </div>
-                  <span
-                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
-                      ms.onTrack
-                        ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800/50"
-                        : "bg-rose-950/60 text-rose-400 border border-rose-800/50"
-                    }`}
-                  >
-                    {ms.status}
-                  </span>
+            {!ingestionCollapsed && (
+              <div style={{ overflow: "hidden", flex: "1 1 auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", flex: "1 1 auto", paddingTop: 4 }}>
+                  {ingestion.map((item, i) => (
+                    <div key={i} style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "9px 10px", display: "flex", alignItems: "center", gap: 8, minHeight: 24 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ai-text-soft)", flexShrink: 0, width: 62 }}>{item.sender}</span>
+                      <span style={{ fontSize: 11.5, color: "var(--ai-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{item.msg}</span>
+                    </div>
+                  ))}
+                  {ingestion.length === 0 && <div style={{ color: "var(--ai-muted)", fontSize: 12, padding: "10px 0" }}>Waiting for field messages…</div>}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
 
-          <div className="p-2.5 rounded bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 font-mono">
-            Predicted project completion variance calculated mathematically via historical discipline slip rates.
+          {/* Suggestions section */}
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: suggestionsCollapsed ? "0 0 auto" : "0 1 120px", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: suggestionsCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
+              <button onClick={() => setSuggestionsCollapsed(!suggestionsCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {suggestionsCollapsed ? "▶" : "▾"}
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Suggestions</span>
+              <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20 }}>1</span>
+            </div>
+            {!suggestionsCollapsed && (
+              <div style={{ overflow: "hidden", flex: "1 1 auto", padding: "4px 10px 10px" }}>
+                <div style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "9px 10px", fontSize: 11.5, color: "var(--ai-text)" }}>
+                  Check critical path — {activities.filter(a => a.is_critical).length} activities at risk of float exhaustion.
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Institutional Memory section */}
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: memoryCollapsed ? "0 0 auto" : "0 0 auto", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: memoryCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
+              <button onClick={() => setMemoryCollapsed(!memoryCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {memoryCollapsed ? "▶" : "▾"}
+              </button>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Institutional Memory</span>
+            </div>
+            {!memoryCollapsed && (
+              <div style={{ overflowY: "auto", flex: "1 1 auto", padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px", lineHeight: 1.4 }}>
+                  Export validated events and datasets for predictive analysis.
+                </div>
+                <button onClick={handleDownloadDataset} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
+                  Download Dataset
+                </button>
+                <div style={{ height: 1, background: "var(--ai-border)", margin: "2px 0" }} />
+                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px", lineHeight: 1.4 }}>
+                  Upload datasets from previous projects to gain insights.
+                </div>
+                <input type="file" ref={fileInputRef} onChange={handleUploadChange} style={{ display: "none" }} accept=".csv,.json,.xlsx" />
+                <button onClick={() => fileInputRef.current?.click()} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
+                  Upload Dataset
+                </button>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
-      {/* Latest Field Ingestion & Provenance Audit Trail Feed */}
-      <div className="pm-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-100">
-              Live Field Progress Feed &amp; Provenance Separation
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Every progress event displays its strict provenance tier: Source Fact, AI Extraction, AI Inference, Prediction, or Human Approval.
-            </p>
-          </div>
-          <Link
-            href="/events"
-            className="text-xs text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1"
-          >
-            All progress events
-            <ArrowUpRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
+      {/* ── Review Drawer (slide-in overlay) ── */}
+      <div
+        onClick={(e) => { if (e.target === e.currentTarget) setDrawerOpen(false); }}
+        style={{ position: "fixed", inset: 0, background: "rgba(16,24,38,.4)", display: "flex", justifyContent: "flex-end", opacity: drawerOpen ? 1 : 0, pointerEvents: drawerOpen ? "auto" : "none", transition: "opacity .25s ease", zIndex: 500 }}
+      >
+        <div style={{ width: "min(1000px,92vw)", height: "100%", background: "var(--surface)", boxShadow: "-10px 0 34px rgba(16,24,38,.2)", transform: drawerOpen ? "translateX(0)" : "translateX(100%)", transition: "transform .32s cubic-bezier(.22,.9,.32,1)", display: "flex", flexDirection: "column" }}>
 
-        <div className="overflow-x-auto">
-          <table className="pm-table">
-            <thead>
-              <tr>
-                <th>Date / Time</th>
-                <th>Extracted Field Event</th>
-                <th>Discipline</th>
-                <th>Matched P6 Activity</th>
-                <th>Location / Tag</th>
-                <th>Provenance Category</th>
-                <th>Confidence</th>
-                <th className="text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentEvents.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                    Loading field events...
-                  </td>
-                </tr>
-              ) : (
-                recentEvents.map((ev) => (
-                  <tr key={ev.id} className="group">
-                    <td className="font-mono text-slate-400 whitespace-nowrap text-[11px]">
-                      {ev.actual_start_datetime
-                        ? ev.actual_start_datetime.substring(0, 10)
-                        : ev.created_at.substring(0, 10)}
-                    </td>
-                    <td className="font-medium text-slate-200 max-w-xs truncate">
-                      {ev.activity_description_extracted || ev.activity_description_raw || "Field progress reported"}
-                    </td>
-                    <td>
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
-                        {String(ev.discipline).toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="font-mono text-cyan-300 text-xs">
-                      {ev.activity_id_plan ? (
-                        <Link
-                          href={`/schedule?activity_id=${ev.activity_id_plan}`}
-                          className="hover:underline flex items-center gap-1"
-                        >
-                          {ev.activity_id_plan}
-                        </Link>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "22px 28px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4 }}>
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: "var(--accent)", display: "inline-block", transform: "rotate(45deg)" }} />
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Review Queue</h2>
+              </div>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>Field messages matched to schedule activities by Kranti AI</p>
+            </div>
+            <button onClick={() => setDrawerOpen(false)} style={{ border: "none", background: "var(--surface-alt)", width: 32, height: 32, borderRadius: 9, fontSize: 19, lineHeight: 1, cursor: "pointer", color: "var(--ink-soft)" }}>×</button>
+          </div>
+
+          <div style={{ flex: "1 1 auto", display: "flex", minHeight: 0 }}>
+            {/* drawer list */}
+            <div style={{ width: 360, flexShrink: 0, borderRight: "1px solid var(--border)", overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              {reviewItems.map(item => {
+                const tier = confidenceTier(item.confidence);
+                const isActive = drawerSelected?.id === item.id;
+                return (
+                  <div key={item.id} onClick={() => setDrawerSelected(item)}
+                    style={{ background: isActive ? "#fff" : "var(--surface-alt)", border: `1px solid ${isActive ? "var(--ink)" : "var(--border)"}`, boxShadow: isActive ? "0 0 0 1px var(--ink) inset" : undefined, borderRadius: 7, padding: "12px 13px", cursor: "pointer", transition: "border-color .12s ease" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--muted)", fontFamily: "'IBM Plex Mono',monospace" }}>{item.id}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 600, color: "var(--ink-soft)", background: "var(--surface)", border: "1px solid var(--border)", padding: "2px 8px", borderRadius: 20 }}>{item.tag}</span>
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.45 }}>{item.preview}</div>
+                    <div style={{ marginTop: 9 }}>
+                      {item.status ? (
+                        <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: item.status === "accepted" ? "var(--ink)" : "transparent", color: item.status === "accepted" ? "#fff" : "var(--muted)", border: item.status === "accepted" ? "none" : "1px solid var(--border-strong)" }}>
+                          {item.status === "accepted" ? "Accepted" : "Declined"}
+                        </span>
                       ) : (
-                        <span className="text-amber-400/90 text-xs">Pending Match</span>
+                        <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 8px", borderRadius: 20, color: tier === "high" ? "#fff" : "var(--ink)", background: tier === "high" ? "var(--ink)" : "var(--border)" }}>
+                          {item.confidence}% confidence
+                        </span>
                       )}
-                    </td>
-                    <td className="text-slate-300 text-xs">
-                      {ev.location_area || ev.location_reference || ev.equipment_tag || "Site ROW"}
-                    </td>
-                    <td>
-                      <ProvenanceBadge category={ev.provenance_category || "ai_extraction"} />
-                    </td>
-                    <td>
-                      <span
-                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                          (ev.confidence_score ?? 0.8) >= 0.85
-                            ? "badge-tier-high"
-                            : (ev.confidence_score ?? 0.8) >= 0.65
-                            ? "badge-tier-medium"
-                            : "badge-tier-low"
-                        }`}
-                      >
-                        {Math.round((ev.confidence_score ?? 0.82) * 100)}%
-                      </span>
-                    </td>
-                    <td className="text-right">
-                      <Link
-                        href={`/events`}
-                        className="text-xs text-slate-400 hover:text-cyan-400 inline-flex items-center gap-1 font-medium transition-colors"
-                      >
-                        Inspect
-                        <ExternalLink className="w-3 h-3" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* drawer detail */}
+            <div style={{ flex: "1 1 auto", overflowY: "auto", padding: "30px 34px" }}>
+              {drawerSelected ? (
+                <div style={{ maxWidth: 640 }}>
+                  <AiDetailView item={drawerSelected} onBack={() => setDrawerSelected(null)} inDrawer />
+                </div>
+              ) : (
+                <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", marginTop: 80 }}>
+                  Select a message on the left to review Kranti AI&apos;s match.
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
