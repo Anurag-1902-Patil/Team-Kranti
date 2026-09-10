@@ -198,6 +198,86 @@ pytest tests/ -v
 
 # Or run tests directly inside the Docker backend container:
 docker compose exec backend pytest tests/ -v
+
+Tests use SQLite in-memory — no Postgres/Redis needed.
+
+Key test files:
+- `tests/test_extraction_normalizer.py` — LLM extractor parsing and normalization
+- `tests/test_matching.py` — Fuzzy + semantic + confidence routing
+- `tests/test_webhook_security.py` — HMAC validation
+
+---
+
+## Key API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET` | `/webhooks/whatsapp` | Meta verification challenge |
+| `POST` | `/webhooks/whatsapp` | Receive WhatsApp messages |
+| `GET` | `/api/v1/events` | List progress events |
+| `GET` | `/api/v1/events/{id}` | Event detail + match candidates |
+| `GET` | `/api/v1/review/queue` | Events pending review |
+| `POST` | `/api/v1/review/{id}/accept` | Accept match |
+| `POST` | `/api/v1/review/{id}/edit` | Correct to different activity |
+| `POST` | `/api/v1/review/{id}/decline` | Decline event |
+| `POST` | `/api/v1/review/{id}/confirm_new` | Confirm as new field activity |
+| `GET` | `/api/v1/schedule/activities` | List plan activities |
+| `POST` | `/api/v1/schedule/activities` | Create new plan activity |
+| `GET` | `/api/v1/schedule/export-xer` | Download updated XER |
+| `GET` | `/api/v1/memory/query?q=...` | Semantic memory search |
+| `GET` | `/api/v1/memory/export` | Export Parquet + CSV + SCHEMA.md |
+
+Full interactive docs at `http://localhost:8000/docs`.
+
+---
+
+## Repository Structure
+
+```
+c:\coding\Team Kranti\
+├── backend/
+│   ├── main.py                     # FastAPI app
+│   ├── core/config.py              # Pydantic settings
+│   ├── db/
+│   │   ├── models.py               # SQLAlchemy ORM (7 tables)
+│   │   └── session.py              # Async session factory
+│   ├── api/v1/
+│   │   ├── webhook.py              # WhatsApp webhook
+│   │   ├── events.py               # Events list/detail
+│   │   ├── review.py               # Human review actions
+│   │   ├── schedule.py             # Schedule + XER export
+│   │   └── memory.py               # Institutional memory
+│   ├── services/
+│   │   ├── ingestion/              # WhatsApp parser, media download/upload
+│   │   ├── extraction/             # ASR, OCR, LLM extractor, normalizer
+│   │   ├── matching/               # Fuzzy, semantic, confidence scoring
+│   │   ├── scheduling/             # XER parser/writer, schedule service
+│   │   └── institutional_memory/   # ChromaDB store, dataset exporter
+│   ├── workers/
+│   │   ├── celery_app.py           # Celery configuration
+│   │   └── tasks.py                # Pipeline orchestration task
+│   ├── security/hmac.py            # HMAC-SHA256 validation
+│   └── alembic/                    # DB migrations
+├── frontend/                       # Next.js 15 reviewer dashboard
+│   ├── app/
+│   │   ├── page.tsx                # Unified App Dashboard (Gantt, Review Queue, AI Ingestion)
+│   │   ├── navigator/              # Project selection page
+│   │   └── globals.css             # Main styling
+│   └── components/                 # Shared UI elements
+├── data/
+│   ├── SCHEMA.md                   # Dataset data dictionary
+│   └── synthetic/                  # Synthetic XER, messages, sender profiles
+├── scripts/
+│   ├── seed_schedule.py            # Load XER + build embedding index
+│   ├── seed_demo_events.py         # Generate synthetic events for demo
+│   └── run_demo.py                 # End-to-end demo runner
+├── tests/                          # pytest test suite
+├── docker-compose.yml
+├── Dockerfile.backend
+├── Dockerfile.worker
+├── .env.example
+└── .ai/                            # Project memory (architecture docs)
 ```
 
 ---
