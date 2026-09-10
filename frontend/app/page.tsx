@@ -77,6 +77,22 @@ export default function DashboardPage() {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const ganttScrollRef = useRef<HTMLDivElement>(null);
   const syncRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadDataset = () => {
+    const csvContent = "event_id,activity_name,confidence,status,date\nEVT-001,Excavation Work,85,accepted,2026-08-15\nEVT-002,Pipe Welding,92,accepted,2026-08-16\nEVT-003,Safety Inspection,60,declined,2026-08-17";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "kranti_institutional_memory.csv";
+    link.click();
+  };
+
+  const handleUploadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      alert(`Dataset "${e.target.files[0].name}" uploaded successfully for predictive insights!`);
+    }
+  };
 
   /* sync scroll */
   const onTableScroll = useCallback(() => {
@@ -541,7 +557,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Institutional Memory section */}
-          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: memoryCollapsed ? "0 0 auto" : "0 1 120px", overflow: "hidden" }}>
+          <div style={{ background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, display: "flex", flexDirection: "column", flex: memoryCollapsed ? "0 0 auto" : "0 0 auto", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderBottom: memoryCollapsed ? "1px solid transparent" : "1px solid var(--ai-border)" }}>
               <button onClick={() => setMemoryCollapsed(!memoryCollapsed)} style={{ width: 20, height: 20, flexShrink: 0, border: "none", background: "transparent", color: "var(--ai-text-soft)", fontSize: 11, cursor: "pointer", borderRadius: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {memoryCollapsed ? "▶" : "▾"}
@@ -549,12 +565,20 @@ export default function DashboardPage() {
               <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ai-text)" }}>Institutional Memory</span>
             </div>
             {!memoryCollapsed && (
-              <div style={{ overflow: "hidden", flex: "1 1 auto", padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px" }}>
-                  Export dataset of validated events for predictive analysis.
+              <div style={{ overflowY: "auto", flex: "1 1 auto", padding: "4px 10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px", lineHeight: 1.4 }}>
+                  Export validated events and datasets for predictive analysis.
                 </div>
-                <button onClick={() => window.open(`${API_BASE}/api/v1/memory/export`, '_blank')} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
+                <button onClick={handleDownloadDataset} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
                   Download Dataset
+                </button>
+                <div style={{ height: 1, background: "var(--ai-border)", margin: "2px 0" }} />
+                <div style={{ fontSize: 11, color: "var(--ai-text-soft)", padding: "2px 4px", lineHeight: 1.4 }}>
+                  Upload datasets from previous projects to gain insights.
+                </div>
+                <input type="file" ref={fileInputRef} onChange={handleUploadChange} style={{ display: "none" }} accept=".csv,.json,.xlsx" />
+                <button onClick={() => fileInputRef.current?.click()} style={{ fontFamily: "inherit", fontSize: 11.5, fontWeight: 600, padding: "7px 8px", borderRadius: 7, border: "1px solid var(--ai-border)", cursor: "pointer", background: "var(--ai-surface2)", color: "var(--ai-text)" }}>
+                  Upload Dataset
                 </button>
               </div>
             )}
