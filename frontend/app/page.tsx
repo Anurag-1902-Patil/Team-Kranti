@@ -56,6 +56,16 @@ function monthOffset(origin: Date, iso: string) {
 
 function confidenceTier(v: number) { return v >= 85 ? "high" : v >= 65 ? "med" : "low"; }
 
+const MENU_OPTIONS: Record<string, string[]> = {
+  File: ["New", "Open...", "Close All", "-", "Save", "Save As...", "-", "Page Setup...", "Print Preview...", "Print...", "-", "Import...", "Export...", "-", "Exit"],
+  Edit: ["Undo", "Redo", "-", "Cut", "Copy", "Paste", "Delete", "-", "Select All", "-", "Find...", "Replace...", "-", "Fill Down", "-", "User Preferences..."],
+  View: ["Layout...", "-", "Columns...", "Table Font and Row...", "Gantt Chart Options...", "-", "Progress Line...", "-", "Filter By", "Group and Sort by", "-", "Collapse All", "Expand All"],
+  Project: ["Activities", "Resource Assignments", "WBS", "OBS", "Thresholds", "Issues", "-", "Maintain Baselines", "Assign Baselines", "-", "Check In", "Check Out"],
+  Enterprise: ["Projects", "Tracking", "Enterprise Project Structure (EPS)", "-", "Resources", "Roles", "OBS", "Resource Codes", "Project Codes", "Activity Codes", "Calendars"],
+  Tools: ["Schedule...", "Level Resources...", "Apply Actuals...", "Update Progress...", "Recalculate Assignment Costs...", "-", "Global Change...", "-", "Monitor Thresholds...", "Issue Navigator", "-", "Reports"],
+  Help: ["Contents", "-", "About Kranti P1 (Primavera P6 Simulation)"]
+};
+
 /* ─── component ─── */
 export default function DashboardPage() {
   const router = useRouter();
@@ -73,6 +83,7 @@ export default function DashboardPage() {
   const [ingestionCollapsed, setIngestionCollapsed] = useState(false);
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
   const [memoryCollapsed, setMemoryCollapsed] = useState(false);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<ReturnType<typeof buildTimeline> | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const ganttScrollRef = useRef<HTMLDivElement>(null);
@@ -345,14 +356,32 @@ export default function DashboardPage() {
         </div>
 
         {/* menubar */}
-        <div style={{ display: "flex", gap: 2, padding: "6px 12px", borderBottom: "1px solid var(--border)", background: "var(--surface-alt)", flexShrink: 0 }}>
-          {["File","Edit","View","Project","Enterprise","Tools","Help"].map(m => (
-            <button key={m} style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, padding: "6px 12px", background: "transparent", color: "var(--ink-soft)", border: "none", borderRadius: 7, cursor: "default" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background="#e9edf3"; (e.currentTarget as HTMLElement).style.color="var(--ink)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background="transparent"; (e.currentTarget as HTMLElement).style.color="var(--ink-soft)"; }}>
-              {m}
-            </button>
+        <div style={{ display: "flex", gap: 2, padding: "6px 12px", borderBottom: "1px solid var(--border)", background: "var(--surface-alt)", flexShrink: 0, position: "relative" }}>
+          {Object.keys(MENU_OPTIONS).map(m => (
+            <div key={m} style={{ position: "relative" }}>
+              <button 
+                onClick={() => setActiveMenu(activeMenu === m ? null : m)}
+                style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, padding: "6px 12px", background: activeMenu === m ? "#e9edf3" : "transparent", color: activeMenu === m ? "var(--ink)" : "var(--ink-soft)", border: "none", borderRadius: 7, cursor: "default" }}
+                onMouseEnter={e => { if (activeMenu && activeMenu !== m) setActiveMenu(m); else if (!activeMenu) { (e.currentTarget as HTMLElement).style.background="#e9edf3"; (e.currentTarget as HTMLElement).style.color="var(--ink)"; } }}
+                onMouseLeave={e => { if (!activeMenu) { (e.currentTarget as HTMLElement).style.background="transparent"; (e.currentTarget as HTMLElement).style.color="var(--ink-soft)"; } }}>
+                {m}
+              </button>
+              {activeMenu === m && (
+                <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, background: "#fff", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 100, minWidth: 200, padding: "4px 0", animation: "fade-in 0.1s ease" }}>
+                  {MENU_OPTIONS[m].map((option, idx) => {
+                    const isDivider = option === "-";
+                    if (isDivider) return <div key={idx} style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />;
+                    return (
+                      <div key={idx} onClick={() => { setActiveMenu(null); alert(`Primavera P6 Option: ${option}`); }} style={{ padding: "6px 16px", fontSize: 12, color: "var(--ink)", cursor: "pointer" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background="#f0f3f8"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background="transparent"}>
+                        {option}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           ))}
+          {activeMenu && <div onClick={() => setActiveMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />}
         </div>
 
         {/* main row: activity table + gantt */}
