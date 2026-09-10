@@ -151,7 +151,7 @@ DATABASE_URL_SYNC=postgresql+psycopg2://kranti:kranti_secret@localhost:5432/sih2
 REDIS_URL=redis://localhost:6379/0
 
 # LLM Extraction: NVIDIA NIM (Primary)
-NVIDIA_API_KEY=
+NVIDIA_API_KEY=<YOUR_API_KEY_HERE>
 NVIDIA_NIM_MODEL=
 # Meta WhatsApp Cloud API (Pre-configured for prototype testing)
 WHATSAPP_APP_SECRET=
