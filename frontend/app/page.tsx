@@ -69,6 +69,8 @@ const MENU_OPTIONS: Record<string, string[]> = {
 /* ─── component ─── */
 export default function DashboardPage() {
   const router = useRouter();
+  const [layoutMode, setLayoutMode] = useState<"Kranti" | "Legacy P6">("Kranti");
+  const [krantiNav, setKrantiNav] = useState<"Hierarchy" | "Timeline" | "Review" | "Insights" | "Memory">("Hierarchy");
   const [activities, setActivities] = useState<PlanActivity[]>([]);
   const [selected, setSelected] = useState<PlanActivity | null>(null);
   const [activeTab, setActiveTab] = useState("general");
@@ -154,7 +156,7 @@ export default function DashboardPage() {
         setReviewItems(rev);
         const ing = items.slice(0, 4).map((e: ProgressEvent) => ({
           sender: e.supervisor_name || "Field Team",
-          msg: (e.activity_description_raw || "").slice(0, 48) + "…",
+          msg: e.activity_description_raw || e.activity_description_extracted || "No message provided",
         }));
         setIngestion(ing);
       })
@@ -382,8 +384,26 @@ export default function DashboardPage() {
             </div>
           ))}
           {activeMenu && <div onClick={() => setActiveMenu(null)} style={{ position: "fixed", inset: 0, zIndex: 99 }} />}
+          
+          <div style={{ marginLeft: "auto", position: "relative" }}>
+            <button 
+              onClick={() => setActiveMenu(activeMenu === "LayoutSwitcher" ? null : "LayoutSwitcher")}
+              style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, padding: "6px 12px", background: activeMenu === "LayoutSwitcher" ? "#e9edf3" : "transparent", color: activeMenu === "LayoutSwitcher" ? "var(--ink)" : "var(--ink-soft)", border: "none", borderRadius: 7, cursor: "default" }}
+              onMouseEnter={e => { if (!activeMenu) { (e.currentTarget as HTMLElement).style.background="#e9edf3"; (e.currentTarget as HTMLElement).style.color="var(--ink)"; } }}
+              onMouseLeave={e => { if (!activeMenu) { (e.currentTarget as HTMLElement).style.background="transparent"; (e.currentTarget as HTMLElement).style.color="var(--ink-soft)"; } }}>
+              Layout: {layoutMode}
+            </button>
+            {activeMenu === "LayoutSwitcher" && (
+              <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "#fff", border: "1px solid var(--border)", borderRadius: 6, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", zIndex: 100, minWidth: 160, padding: "4px 0", animation: "fade-in 0.1s ease" }}>
+                <div onClick={() => { setLayoutMode("Kranti"); setActiveMenu(null); }} style={{ padding: "6px 16px", fontSize: 12, color: layoutMode === "Kranti" ? "var(--accent)" : "var(--ink)", cursor: "pointer", fontWeight: layoutMode === "Kranti" ? 600 : 400 }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background="#f0f3f8"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background="transparent"}>Kranti Layout</div>
+                <div onClick={() => { setLayoutMode("Legacy P6"); setActiveMenu(null); }} style={{ padding: "6px 16px", fontSize: 12, color: layoutMode === "Legacy P6" ? "var(--accent)" : "var(--ink)", cursor: "pointer", fontWeight: layoutMode === "Legacy P6" ? 600 : 400 }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background="#f0f3f8"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background="transparent"}>Legacy P6</div>
+              </div>
+            )}
+          </div>
         </div>
 
+        {layoutMode === "Legacy P6" ? (
+          <>
         {/* main row: activity table + gantt */}
         <div style={{ flex: "1 1 auto", display: "flex", minHeight: 0, borderBottom: "1px solid var(--border)" }}>
 
@@ -485,10 +505,235 @@ export default function DashboardPage() {
             {selected ? <DetailsGrid act={selected} /> : <div style={{ color: "var(--muted)", fontSize: 12.5 }}>Select an activity above to view its details.</div>}
           </div>
         </div>
+          </>
+        ) : (
+          <div style={{ flex: "1 1 auto", display: "flex", minHeight: 0, background: "var(--bg)" }}>
+            {/* Kranti Sidebar Navigation */}
+            <div style={{ width: 240, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--surface)", display: "flex", flexDirection: "column", padding: "16px 12px", gap: 8 }}>
+              {(["Hierarchy", "Timeline", "Review", "Insights", "Memory"] as const).map(nav => (
+                <button key={nav} onClick={() => setKrantiNav(nav)}
+                  style={{ fontFamily: "inherit", fontSize: 13, fontWeight: krantiNav === nav ? 600 : 500, padding: "10px 14px", borderRadius: 8, background: krantiNav === nav ? "var(--accent-soft)" : "transparent", color: krantiNav === nav ? "var(--accent-ink)" : "var(--ink-soft)", border: "none", cursor: "pointer", textAlign: "left", transition: "background .15s ease" }}
+                  onMouseEnter={e => { if (krantiNav !== nav) (e.currentTarget as HTMLElement).style.background = "var(--surface-hover)"; }}
+                  onMouseLeave={e => { if (krantiNav !== nav) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                  {nav === "Hierarchy" ? "Project Hierarchy" : nav === "Timeline" ? "Project Timeline" : nav === "Review" ? "Review Queue" : nav === "Insights" ? "AI Insights" : "Institutional Memory"}
+                </button>
+              ))}
+            </div>
+
+            {/* Kranti Main Area */}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--surface)", padding: 20, overflow: "auto" }}>
+              {krantiNav === "Hierarchy" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface-alt)", fontWeight: 600, fontSize: 14 }}>Project Hierarchy</div>
+                  <div ref={tableScrollRef} onScroll={onTableScroll} style={{ overflow: "auto", flex: "1 1 auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12, tableLayout: "fixed" }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 64, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>ID</th>
+                          <th style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Name</th>
+                          <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Orig</th>
+                          <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Rem</th>
+                          <th style={{ width: 38, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activities.map((act) => {
+                          const isSel = selected?.id === act.id;
+                          const pct = act.actual_percent_complete || act.percent_complete_plan || 0;
+                          return (
+                            <tr key={act.id} onClick={() => { setSelected(act); setActiveTab("general"); }} style={{ cursor: "pointer", background: isSel ? "var(--accent-soft)" : undefined }}>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11 }}>{act.activity_id}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.activity_name}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{act.original_duration_days ? `${act.original_duration_days}d` : "—"}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{act.remaining_duration_days ? `${act.remaining_duration_days}d` : "—"}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{pct}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {krantiNav === "Timeline" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface-alt)", fontWeight: 600, fontSize: 14 }}>Project Timeline</div>
+                  <div ref={ganttScrollRef} onScroll={onGanttScroll} style={{ overflow: "auto", flex: "1 1 auto", position: "relative" }}>
+                    {timeline && (
+                      <div style={{ position: "relative", width: timeline.totalW, minWidth: "100%" }}>
+                        {/* header */}
+                        <div style={{ position: "sticky", top: 0, zIndex: 3, background: "var(--surface-alt)", width: timeline.totalW }}>
+                          <div style={{ display: "flex" }}>
+                            {quarters.map(q => (
+                              <div key={q.label} style={{ width: q.months.length * MONTH_W, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border-strong)", fontSize: 10.5, fontWeight: 600, color: "var(--ink-soft)", textAlign: "center", padding: "5px 0" }}>{q.label}</div>
+                            ))}
+                          </div>
+                          <div style={{ display: "flex" }}>
+                            {timeline.months.map((m, i) => (
+                              <div key={i} style={{ width: MONTH_W, borderRight: "1px solid var(--border)", borderBottom: "1px solid var(--border)", fontSize: 9.5, textAlign: "center", color: "var(--muted)", padding: "3px 0", flexShrink: 0 }}>{m.label}</div>
+                            ))}
+                          </div>
+                        </div>
+                        {/* body */}
+                        <div style={{ position: "relative", width: timeline.totalW }}>
+                          {activities.map((act) => {
+                            const isSel = selected?.id === act.id;
+                            return (
+                              <div key={act.id} onClick={() => { setSelected(act); setActiveTab("general"); }} style={{ height: ROW_H, position: "relative", borderBottom: "1px solid var(--border)", background: isSel ? "var(--accent-soft)" : undefined, cursor: "pointer", width: timeline.totalW }}>
+                                {timeline.months.map((_, i) => (
+                                  <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: i * MONTH_W, borderLeft: i % 3 === 0 ? "1px solid var(--border-strong)" : "1px solid #eef0f4" }} />
+                                ))}
+                                {renderBar(act)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {krantiNav === "Review" && (
+                <div style={{ flex: 1, display: "flex", gap: 20 }}>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ai-border)", fontWeight: 600, fontSize: 14, color: "var(--ai-text)", display: "flex", justifyContent: "space-between" }}>
+                      Review Queue
+                      <span style={{ fontSize: 11, background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20 }}>{reviewItems.filter(r => !r.status).length} Pending</span>
+                    </div>
+                    <div style={{ overflowY: "auto", flex: "1 1 auto", padding: 16 }}>
+                      {aiView === "detail" && aiSelected ? (
+                        <AiDetailView item={aiSelected} onBack={() => { setAiView("list"); setAiSelected(null); setEditMode(false); }} />
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {reviewItems.map(item => {
+                            const tier = confidenceTier(item.confidence);
+                            return (
+                              <div key={item.id} onClick={() => { setAiSelected(item); setAiView("detail"); setEditMode(false); }}
+                                style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", transition: "border-color .12s ease" }}
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--ai-border-strong)"}
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = "var(--ai-border)"}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ai-text-soft)", fontFamily: "'IBM Plex Mono',monospace" }}>{item.id}</span>
+                                <span style={{ fontSize: 13, color: "var(--ai-text)", flex: 1 }}>{item.preview}</span>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--ai-text-soft)", background: "var(--ai-surface3)", padding: "3px 10px", borderRadius: 20, border: "1px solid var(--ai-border)" }}>{item.tag}</span>
+                                {item.status ? (
+                                  <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: item.status === "accepted" ? "var(--ai-text)" : "transparent", color: item.status === "accepted" ? "#fff" : "var(--ai-muted)", border: item.status === "accepted" ? "none" : "1px solid var(--ai-border-strong)" }}>
+                                    {item.status === "accepted" ? "Accepted" : "Declined"}
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 20, color: tier === "high" ? "#fff" : "var(--ai-text)", background: tier === "high" ? "var(--ai-text)" : tier === "med" ? "var(--ai-border-strong)" : "var(--ai-surface2)" }}>
+                                    {item.confidence}%
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {reviewItems.length === 0 && <div style={{ color: "var(--ai-muted)", fontSize: 13, padding: "10px 0" }}>No pending review items.</div>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ flex: "0 0 320px", display: "flex", flexDirection: "column", background: "var(--ai-surface)", border: "1px solid var(--ai-border)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--ai-border)", fontWeight: 600, fontSize: 14, color: "var(--ai-text)", display: "flex", justifyContent: "space-between" }}>
+                      Ingestion Feed
+                      <span style={{ fontSize: 11, background: "var(--ai-surface3)", padding: "2px 8px", borderRadius: 20 }}>Live</span>
+                    </div>
+                    <div style={{ overflowY: "auto", flex: "1 1 auto", padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {ingestion.map((item, i) => (
+                        <div key={i} style={{ background: "var(--ai-surface2)", border: "1px solid var(--ai-border)", borderRadius: 7, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ai-text-soft)" }}>{item.sender}</span>
+                          <span style={{ fontSize: 12.5, color: "var(--ai-text)", lineHeight: 1.4 }}>{item.msg}</span>
+                        </div>
+                      ))}
+                      {ingestion.length === 0 && <div style={{ color: "var(--ai-muted)", fontSize: 13 }}>Waiting for field messages…</div>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {krantiNav === "Insights" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div style={{ padding: 24, border: "1px dashed var(--border-strong)", borderRadius: 10, background: "var(--surface-alt)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>Predictive Insights</div>
+                    <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 400, textAlign: "center" }}>Upload a past project dataset (CSV or Excel) to train Kranti AI for predictive risk analysis.</div>
+                    <input type="file" ref={fileInputRef} style={{ display: "none" }} onChange={handleUploadChange} accept=".csv, .xlsx" />
+                    <button onClick={() => fileInputRef.current?.click()} style={{ fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "8px 16px", borderRadius: 7, border: "none", cursor: "pointer", background: "var(--accent)", color: "#fff" }}>
+                      Upload Past Project Dataset
+                    </button>
+                  </div>
+                  <div style={{ flex: 1, display: "flex", gap: 20 }}>
+                    <div style={{ flex: 2, background: "var(--surface-alt)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, display: "flex", flexDirection: "column" }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Schedule Variance Trend</div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16 }}>Estimated completion delay (Y-axis: Days) measured over project duration (X-axis: Weeks).</div>
+                      <div style={{ flex: 1, display: "flex", gap: 12 }}>
+                        {/* Y-axis */}
+                        <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", paddingBottom: 20 }}>
+                          <span>+20d</span>
+                          <span>+10d</span>
+                          <span>0d</span>
+                        </div>
+                        {/* Graph Area */}
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                          <div style={{ flex: 1, borderLeft: "1px solid var(--border-strong)", borderBottom: "1px solid var(--border-strong)", display: "flex", alignItems: "flex-end", padding: "10px 0 0 8px", gap: 6, justifyContent: "space-between", position: "relative" }}>
+                            {/* Grid lines */}
+                            <div style={{ position: "absolute", left: 0, right: 0, top: "0%", borderTop: "1px dashed var(--border)", zIndex: 0 }} />
+                            <div style={{ position: "absolute", left: 0, right: 0, top: "50%", borderTop: "1px dashed var(--border)", zIndex: 0 }} />
+                            {/* Bars */}
+                            {[40, 60, 45, 80, 55, 90, 70, 65, 50, 75, 85, 60, 40, 95].map((h, i) => (
+                              <div key={i} title={`Week ${i + 1}: ${Math.round((h/100)*20)} days delay`} 
+                                style={{ flex: 1, height: `${h}%`, background: "var(--info-soft)", border: "1px solid var(--info)", borderBottom: "none", borderRadius: "4px 4px 0 0", zIndex: 1, transition: "background .15s" }} 
+                                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--info)"} 
+                                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "var(--info-soft)"} />
+                            ))}
+                          </div>
+                          {/* X-axis */}
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", marginTop: 8, paddingLeft: 8 }}>
+                            <span>Wk 1</span>
+                            <span>Wk 7</span>
+                            <span>Wk 14</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, background: "var(--surface-alt)", border: "1px solid var(--border)", borderRadius: 10, padding: 20 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Key Risk Factors</div>
+                      <ul style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.6, paddingLeft: 20, margin: 0 }}>
+                        <li>Material delivery delays</li>
+                        <li>Resource overallocation</li>
+                        <li>Weather disruptions</li>
+                        <li>Design changes pending approval</li>
+                        <li>Labor shortages in civil works</li>
+                        <li>Permit clearance delays</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {krantiNav === "Memory" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                  <div style={{ maxWidth: 600, margin: "40px auto 0", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 32, boxShadow: "var(--shadow-sm)" }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Institutional Memory</div>
+                    <div style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 24 }}>
+                      Export the current project's validated execution data. This structured historical dataset helps train future AI models and improves baseline planning accuracy for similar pipeline projects.
+                    </div>
+                    <div style={{ display: "flex", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 24 }}>
+                      <button onClick={handleDownloadDataset} style={{ flex: 1, fontFamily: "inherit", fontSize: 13, fontWeight: 600, padding: "10px", borderRadius: 8, border: "none", cursor: "pointer", background: "var(--ink)", color: "#fff" }}>
+                        Download CSV Dataset
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Kranti AI frame ── */}
-      <div style={{ width: 300, flexShrink: 0, border: "1px solid var(--ai-border)", borderRadius: 14, background: "var(--ai-bg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 1px 2px rgba(16,24,38,.04), 0 6px 20px rgba(16,24,38,.06)" }}>
+      {layoutMode === "Legacy P6" && (
+        <div style={{ width: 300, flexShrink: 0, border: "1px solid var(--ai-border)", borderRadius: 14, background: "var(--ai-bg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 1px 2px rgba(16,24,38,.04), 0 6px 20px rgba(16,24,38,.06)" }}>
 
         {/* ai titlebar */}
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "14px 18px", borderBottom: "1px solid var(--ai-border)", flexShrink: 0, background: "var(--ai-bg)" }}>
@@ -612,9 +857,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-
         </div>
       </div>
+      )}
 
       {/* ── Review Drawer (slide-in overlay) ── */}
       <div
