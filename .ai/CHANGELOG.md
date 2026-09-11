@@ -285,7 +285,13 @@ The matched score of 0.5178 (unmatched_new) was caused by the LLM returning `"[P
   - Delay Analytics API (`http://localhost:8000/api/v1/analysis/delays`): 56 delay events across 13 causes.
   - Frontend (`http://localhost:3000`): all pages (Overview, Schedule Gantt, Delay Analysis, Review Queue) returning HTTP 200.
 
+---
 
+## 2026-09-11 — Kranti UI Layout Refinements
 
+**Session summary**: Implemented the "Kranti" vs "Legacy P6" dual-layout toggle and refined the Insights and Ingestion Feed sections on the frontend.
 
-
+### Frontend UI Updates
+- **Layout Switcher**: Added a top navigation toggle in `frontend/app/page.tsx` allowing users to switch between the original "Legacy P6" view and the new "Kranti" dashboard layout.
+- **AI Insights Space**: Upgraded the Schedule Variance Trend graph to include 14 data points, descriptive Y-axis (+20d to 0d) and X-axis (Weeks 1-14) labels, hover tooltips for individual data points, and additional realistic key risk factors.
+- **Ingestion Feed**: Updated parsing logic to display the complete raw message submitted by field engineers rather than truncating it with ellipsis.
