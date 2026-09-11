@@ -194,25 +194,61 @@ export interface EntityAlias {
   created_at: string;
 }
 
-export interface ScheduleHealth {
-  project_id: string;
+export interface MilestoneItem {
+  activity_id: string;
+  name: string;
+  target_date: string;
+  status: string;
+  progress_pct: number;
+}
+
+export interface AtRiskActivityItem {
+  activity_id: string;
+  name: string;
+  discipline: string;
+  variance_days: number;
+  total_float: number;
+  is_critical: boolean;
+  progress_pct: number;
+}
+
+export interface DisciplineHealthItem {
   total_activities: number;
-  started_activities: number;
-  completed_activities: number;
-  not_started_activities: number;
+  completed: number;
+  avg_progress_pct: number;
+  delayed_activities: number;
+}
+
+export interface ScheduleHealth {
+  project_id?: string;
+  total_activities: number;
   overall_progress_pct: number;
-  planned_progress_pct: number;
-  progress_variance_pct: number;
-  critical_activities_count: number;
-  delayed_activities_count: number;
-  at_risk_activities_count: number;
-  average_float_days: number;
-  critical_path_slippage_days: number;
-  active_blockers_count: number;
-  pending_reviews_count: number;
-  planned_project_finish: string | null;
-  forecast_project_finish: string | null;
-  health_status: "on_track" | "minor_delay" | "critical_slippage";
+  completed_count: number;
+  in_progress_count: number;
+  not_started_count: number;
+  delayed_count: number;
+  critical_count: number;
+  critical_delayed_count: number;
+  mean_schedule_variance_days: number;
+  milestone_health: MilestoneItem[];
+  top_at_risk_activities: AtRiskActivityItem[];
+  discipline_health: Record<string, DisciplineHealthItem>;
+  // Backwards compatibility fields
+  started_activities?: number;
+  completed_activities?: number;
+  not_started_activities?: number;
+  planned_progress_pct?: number;
+  progress_variance_pct?: number;
+  critical_activities_count?: number;
+  delayed_activities_count?: number;
+  at_risk_activities_count?: number;
+  average_float_days?: number;
+  critical_path_slippage_days?: number;
+  active_blockers_count?: number;
+  pending_reviews_count?: number;
+  planned_project_finish?: string | null;
+  forecast_project_finish?: string | null;
+  health_status?: "on_track" | "minor_delay" | "critical_slippage";
 }
 
 export interface DelayIntelligence {
@@ -325,4 +361,325 @@ export interface MemoryQueryResult {
     metadata: Record<string, unknown>;
     similarity_score: number;
   }>;
+}
+
+// ---------------------------------------------------------------------------
+// Part C & MVP P6 Frontend Types
+// ---------------------------------------------------------------------------
+
+export interface GanttActivity {
+  id: string;
+  activity_id: string;
+  activity_name: string;
+  wbs_code: string;
+  wbs_name: string;
+  discipline: string;
+  contractor_name: string;
+  area: string;
+  unit: string;
+  planned_start: string | null;
+  planned_finish: string | null;
+  original_duration_days: number;
+  percent_complete_plan: number;
+  actual_start: string | null;
+  actual_finish: string | null;
+  actual_percent_complete: number;
+  total_float_days: number;
+  is_critical: boolean;
+  delay_risk_score: number;
+  status: "completed" | "in_progress" | "not_started" | "delayed";
+  predecessors: string[];
+  predecessors_detail?: Array<{ activity_id: string; type: string; lag: number }>;
+  successors: string[];
+}
+
+export interface WBSNode {
+  wbs_code: string;
+  wbs_name: string;
+  activities: GanttActivity[];
+  planned_start: string | null;
+  planned_finish: string | null;
+  actual_start: string | null;
+  actual_finish: string | null;
+  percent_complete: number;
+  is_critical: boolean;
+}
+
+export interface DependencyEdge {
+  id: string;
+  predecessor: string;
+  successor: string;
+  type: string;
+  lag: number;
+}
+
+export interface GanttDataResponse {
+  total: number;
+  activities: GanttActivity[];
+  wbs_tree: WBSNode[];
+  dependencies: DependencyEdge[];
+  summary: {
+    total_activities: number;
+    filtered_count: number;
+    completed_count: number;
+    in_progress_count: number;
+    not_started_count: number;
+    delayed_count: number;
+    critical_count: number;
+    min_date: string | null;
+    max_date: string | null;
+  };
+}
+
+export interface UpdateFeedItem {
+  id: string;
+  source_type: "review_queue" | "data_quality" | "schedule_change" | "document" | "entity_alias";
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detected_change: string;
+  affected_activity_id: string | null;
+  affected_activity_name: string | null;
+  current_value: any;
+  proposed_value: any;
+  confidence: number | null;
+  timestamp: string;
+  source_info: string | null;
+  action_label: string;
+  target_route: string;
+}
+
+export interface UpdateCenterSummary {
+  total_items: number;
+  pending_reviews: number;
+  data_quality_flags: number;
+  schedule_changes: number;
+  pending_documents: number;
+  pending_aliases: number;
+}
+
+export interface UpdateCenterFeedResponse {
+  summary: UpdateCenterSummary;
+  items: UpdateFeedItem[];
+}
+
+export interface DelayKPIs {
+  total_delayed_activities: number;
+  total_delay_days: number;
+  average_delay_days: number;
+  max_delay_days: number;
+  critical_delayed_count: number;
+}
+
+export interface MajorDelayRecord {
+  event_id: string;
+  activity_id: string;
+  activity_name: string;
+  discipline: string;
+  contractor: string;
+  date: string;
+  delay_days: number;
+  cause: string;
+  reason: string;
+  source: string;
+  confidence: number;
+  impact: string;
+  recommended_action: string;
+}
+
+export interface DelayAnalyticsResponse {
+  kpis: DelayKPIs;
+  total_delay_events: number;
+  cause_breakdown: Array<{
+    cause: string;
+    category: string;
+    label: string;
+    display_name: string;
+    count: number;
+    percentage: number;
+    delay_days: number;
+    estimated_days_lost: number;
+  }>;
+  categories: Array<{
+    cause: string;
+    label: string;
+    count: number;
+    percentage: number;
+    delay_days: number;
+  }>;
+  by_discipline: Array<{
+    discipline: string;
+    count: number;
+    delay_days: number;
+    percentage: number;
+  }>;
+  by_contractor: Array<{
+    contractor: string;
+    total_events: number;
+    delay_events: number;
+    delayed_activities: number;
+    delay_ratio: number;
+    avg_variance_factor: number;
+    delay_days: number;
+    primary_delay_cause: string;
+  }>;
+  by_location: Array<{
+    area: string;
+    location: string;
+    delayed_events: number;
+    active_blockers: number;
+    sample_blockers: string[];
+  }>;
+  bottlenecks: Array<{
+    area: string;
+    location: string;
+    delayed_events: number;
+    active_blockers: number;
+    sample_blockers: string[];
+  }>;
+  recurring_blockers: Array<{
+    description: string;
+    occurrences: number;
+    latest_reported: string;
+  }>;
+  trend: Array<{
+    month: string;
+    delay_days: number;
+    event_count: number;
+  }>;
+  major_delays: MajorDelayRecord[];
+}
+
+export interface ParsedFilterResponse {
+  query: string;
+  filters: {
+    target_type: string;
+    discipline: string | null;
+    location: string | null;
+    status: string | null;
+    is_delayed: boolean;
+    is_critical: boolean;
+    equipment_tag: string | null;
+    has_blocker: boolean;
+    keyword: string | null;
+  };
+  explanation: string;
+  suggested_route: string;
+  results_preview: Array<{
+    id: string;
+    record_type: string;
+    title: string;
+    discipline: string;
+    status: string;
+    progress_pct: number | null;
+    location: string;
+    is_critical: boolean;
+    link_url: string;
+    provenance: string;
+    summary: string;
+  }>;
+  total_matches: number;
+}
+
+export interface ActivityDetailAggregate {
+  identity: {
+    id: string;
+    activity_id: string;
+    activity_name: string;
+    wbs_code: string;
+    wbs_name: string;
+    discipline: string;
+    contractor_name: string;
+    area: string;
+    unit: string;
+    is_critical: boolean;
+  };
+  schedule: {
+    planned_start: string | null;
+    planned_finish: string | null;
+    original_duration_days: number;
+    percent_complete_plan: number;
+    actual_start: string | null;
+    actual_finish: string | null;
+    actual_percent_complete: number;
+    total_float_days: number;
+    status: "completed" | "in_progress" | "not_started" | "delayed";
+    predecessors: Array<{ activity_id: string; type: string; lag: number }>;
+    successors: Array<{ activity_id: string; type: string; lag: number }>;
+  };
+  progress: {
+    percent_complete: number;
+    history: Array<{
+      event_id: string;
+      timestamp: string;
+      extracted_description: string;
+      percent_complete: number | null;
+      actual_start: string | null;
+      actual_finish: string | null;
+      blocker_description: string | null;
+      delay_category: string | null;
+      confidence_score: number | null;
+      provenance_category: string;
+    }>;
+  };
+  intelligence: {
+    latest_event_id: string | null;
+    extracted_description: string | null;
+    confidence_score: number | null;
+    confidence_tier: string;
+    extracted_by: string;
+    match_candidates: Array<{
+      candidate_activity_id: string;
+      fuzzy_score: number | null;
+      semantic_score: number | null;
+      llm_score: number | null;
+      final_score: number | null;
+      rank: number | null;
+      was_selected: boolean;
+    }>;
+    source_document: {
+      document_id: string;
+      sender_id: string;
+      source_type: string;
+      received_at: string | null;
+      raw_text_excerpt: string | null;
+      mime_type: string | null;
+    } | null;
+    evidence_breadcrumb: Array<{
+      level: string;
+      id: string;
+      label: string;
+    }>;
+  };
+  risk: {
+    delay_risk_score: number;
+    predicted_finish: string | null;
+    predicted_delay_days: number;
+    delay_risk_percentage: number;
+    confidence: number;
+    variance_factor: number;
+    contributing_factors: string[];
+    narrative: string;
+    explainability_strip: Array<{
+      event_id: string;
+      activity_id_plan: string;
+      actual_duration_days: number;
+      planned_duration_days: number;
+      variance_days: number;
+      date: string;
+    }>;
+  };
+  audit: {
+    decisions: Array<{
+      decision_id: string;
+      decision: string;
+      reviewer: string;
+      notes: string | null;
+      decided_at: string | null;
+      corrected_fields: any;
+    }>;
+    correction_history: any[];
+    planner_notes: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+  };
 }

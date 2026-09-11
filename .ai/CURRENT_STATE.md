@@ -1,7 +1,7 @@
 # CURRENT_STATE.md — Build state
 
-**Last updated**: 2026-09-05 (after final change request)
-**Overall status**: ✅ COMPLETE — all layers built, final stack applied
+**Last updated**: 2026-09-11 (after P6-style frontend redesign)
+**Overall status**: ✅ COMPLETE — all layers built, 7 MVP project controls views active and tested
 
 ---
 
@@ -67,6 +67,7 @@
 | 17 | Grounded Natural Language Parameterized Search | ✅ Done (ADR-014) |
 | 18 | PM Frontend MVP (Gantt, Detail Drawer, Re-editing, Delay Charts, Provenance) | ✅ Done (ADR-014) |
 | 19 | Memory docs updated (.ai/*) | ✅ Done |
+| 20 | P6-Style Project Controls Interface (7 MVPs: Overview, Gantt, Drawer, Review, Updates, Delays, ⌘K) | ✅ Done (Full P6 White Palette, 0 Mocked Data) |
 
 ---
 

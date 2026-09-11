@@ -21,10 +21,11 @@
 | `v1/webhook.py` | GET/POST /webhooks/whatsapp — HMAC verify, idempotency, Celery enqueue |
 | `v1/events.py` | GET /events (list + filter), GET /events/{id} (detail + candidates) |
 | `v1/review.py` | POST /review/{id}/accept|edit|decline|confirm_new, GET /review/queue, POST /review/alias/{id}/decide, POST /review/{id}/re-edit |
-| `v1/schedule.py` | GET /schedule/activities, POST /schedule/activities, GET /schedule/export-xer, POST /schedule/import |
-| `v1/analysis.py` | GET /analysis/schedule-health, /delays, /resources, /predictions/{activity_id} |
+| `v1/schedule.py` | GET /schedule/activities, POST /schedule/activities, GET /schedule/export-xer, POST /schedule/import, GET /schedule/gantt, GET /schedule/activities/{id}/detail |
+| `v1/updates.py` | GET /updates/feed (aggregated attention feed with stable IDs for reviews, data quality, changes) |
+| `v1/analysis.py` | GET /analysis/schedule-health, /delays (filtered root causes & register), /resources, /predictions/{activity_id} |
 | `v1/entities.py` | GET /entities/disciplines, /contractors, /equipment, /locations, /aliases |
-| `v1/search.py` | POST /search/natural (safe grounded parameterized search) |
+| `v1/search.py` | POST /search/natural, POST /search/parse-filter (grounded natural search parser & route suggestions) |
 | `v1/memory.py` | GET /memory/query, GET /memory/export (ZIP), GET /memory/stats |
 
 ### Services (`backend/services/`)
@@ -68,21 +69,25 @@
 ## Frontend (`frontend/`)
 | File | Purpose |
 |---|---|
-| `app/layout.tsx` | Root layout with dark engineering theme, Sidebar, and top NLSearchBar header |
-| `app/globals.css` | Neutral slate-950 palette, provenance badge tokens, compact table styles |
-| `app/page.tsx` | Overview Dashboard MVP — 5 real stat cards, schedule health, milestone tracker, provenance feed |
-| `app/schedule/page.tsx` | Primavera P6 schedule view with Gantt chart, activity detail slide-out, XER import/export |
-| `app/review/page.tsx` | Planner Review Queue MVP — dual tabs for field events (rapid action) and terminology proposals |
-| `app/analysis/delays/page.tsx` | Delay & Bottleneck Analysis MVP — 12 root causes, bottleneck locations, contractor ranking |
-| `app/events/page.tsx` | All progress events audit register with provenance and discipline filters |
-| `components/Sidebar.tsx` | Navigation grouped into Overview, Execution, and Analysis |
-| `components/ProvenanceBadge.tsx` | 5-tier provenance visual badges (Source Fact, AI Extraction, Inference, Prediction, Approval) |
-| `components/NLSearchBar.tsx` | Grounded natural language search input with parsed filter pills & direct record linking |
-| `components/GanttChart.tsx` | High-density schedule table with visual baseline vs actual progress timeline bars |
-| `components/ActivityDetailPanel.tsx` | Activity detail slide-out drawer with deterministic prediction card & inline planner re-editing |
-| `components/DelayCharts.tsx` | 12 standard delay causes breakdown, site bottleneck ranking, recurring blockers |
-| `lib/api.ts` | Typed client for all analysis, predictions, entities, search, and review endpoints |
-| `lib/types.ts` | Complete TypeScript interfaces for the full ontology and intelligence layer |
+| `app/layout.tsx` | Root layout with AppProvider, Header, Sidebar, CommandPalette, and ActivityDetailDrawer |
+| `app/globals.css` | White/near-white P6 palette, desaturated status colors, compact 28px tables, cmdk styles |
+| `app/page.tsx` | MVP 1: Project Overview — KPIs, S-Curve, Status Donut, Discipline Progress, Delay Watchlist, What-Changed Ribbon |
+| `app/schedule/page.tsx` | MVP 2: P6 Schedule & Gantt — WBS tree, dual baseline/actual bars, zoom levels, dependency lines, XER import/export |
+| `app/schedule/network/page.tsx` | Specialized View: Critical Path Precedence Network (PDM) — logic nodes, ES/EF, total float, driving links |
+| `app/schedule/timeline/page.tsx` | Specialized View: Project Chronological Timeline — delivery gates, milestone rails, completion checks |
+| `app/review/page.tsx` | MVP 4: Planner Review Queue — keyboard shortcuts (`A`/`E`/`R`/`J`/`K`), confidence tiers, match re-assignment, new activity confirmation, terminology proposals |
+| `app/updates/page.tsx` | MVP 5: Update Center — unified attention feed across reviews, data quality, schedule adjustments, documents, and aliases |
+| `app/updates/quality/page.tsx` | Specialized View: Data Quality & Integrity Register — schedule logic anomalies, unmapped terminology, triage links |
+| `app/analysis/delays/page.tsx` | MVP 6: Delay Analysis — 12 root causes, contractor ranking, bottlenecks, recurring blockers, major delay register |
+| `components/Header.tsx` | Project identity, data date, status, `⌘K` search trigger, reviewer identity |
+| `components/Sidebar.tsx` | Navigation with live badge counts for Review Queue and Update Center |
+| `components/CommandPalette.tsx` | MVP 7: Command Palette (`⌘K`) — spotlight search with parsed filter pills and direct record jumping |
+| `components/WhatChangedRibbon.tsx` | Top diff ribbon displaying new DPRs, newly delayed activities, and active blockers |
+| `components/ActivityDetailDrawer.tsx` | MVP 3: Activity Detail Drawer — 6 tabs (Identity, Schedule, Progress, Intelligence with Evidence Breadcrumbs, Risk with Explainability Strip, Audit) |
+| `components/P6Gantt.tsx` | High-density dual-bar SVG/HTML Gantt component with expandable WBS hierarchy, critical-path highlights, and dependencies |
+| `lib/api.ts` | Typed client for all schedule, gantt, review, analysis, update feed, and natural search endpoints |
+| `lib/types.ts` | Complete TypeScript interfaces for the full P6 ontology, detail aggregates, and intelligence feeds |
+| `lib/AppContext.tsx` | Global state for drawer selection, command palette, and reactive badge counters |
 | `Dockerfile` | Multi-stage build → minimal runtime |
 
 ## Data (`data/`)

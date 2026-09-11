@@ -23,18 +23,20 @@ def _build_engine():
     if "postgresql" in db_url:
         try:
             parsed = urlparse(db_url.replace("+asyncpg", ""))
-            host = parsed.hostname or "localhost"
+            host = parsed.hostname or "127.0.0.1"
+            if host == "localhost":
+                host = "127.0.0.1"
             port = parsed.port or 5432
             probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            probe.settimeout(0.5)
+            probe.settimeout(0.1)
             probe.connect((host, port))
             probe.close()
-        except Exception as exc:
-            log.warning(
-                "db.postgres_unreachable",
-                target=f"{host}:{port}",
-                reason=str(exc),
-                action="falling back to local sqlite:///./sih26122.db",
+        except Exception:
+            log.info(
+                "db.storage_mode",
+                engine="sqlite",
+                database="sih26122.db",
+                reason="PostgreSQL not detected on 127.0.0.1:5432; running in standalone local mode with SQLite",
             )
             db_url = "sqlite+aiosqlite:///./sih26122.db"
 

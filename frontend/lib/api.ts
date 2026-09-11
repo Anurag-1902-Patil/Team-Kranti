@@ -45,13 +45,35 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...apiHeaders(),
-      ...options.headers,
-    },
-  });
+  const headers = {
+    ...apiHeaders(),
+    ...options.headers,
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    // If localhost connection failed (common Windows IPv6 ::1 resolution issue), try 127.0.0.1
+    if (API_BASE.includes("localhost")) {
+      const fallbackBase = API_BASE.replace("localhost", "127.0.0.1");
+      try {
+        res = await fetch(`${fallbackBase}${path}`, {
+          ...options,
+          headers,
+        });
+      } catch {
+        throw new Error(
+          `Unable to reach backend at ${API_BASE} or ${fallbackBase}. Ensure Uvicorn is running on port 8000.`
+        );
+      }
+    } else {
+      throw err;
+    }
+  }
 
   if (res.status === 401) {
     // Token expired or invalid — redirect to login
@@ -169,5 +191,128 @@ export async function searchNatural(query: string): Promise<NLSearchResult> {
 
 export async function fetchDisciplines(): Promise<DisciplineLookup[]> {
   return apiFetch<DisciplineLookup[]>("/api/v1/entities/disciplines");
+}
+
+// ---------------------------------------------------------------------------
+// Part C & MVP API Methods
+// ---------------------------------------------------------------------------
+
+import type {
+  ActivityDetailAggregate,
+  DelayAnalyticsResponse,
+  GanttDataResponse,
+  ParsedFilterResponse,
+  UpdateCenterFeedResponse,
+} from "./types";
+
+export async function fetchGanttData(params?: {
+  discipline?: string;
+  status?: string;
+  contractor?: string;
+  critical_only?: boolean;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<GanttDataResponse> {
+  const q = new URLSearchParams();
+  if (params?.discipline) q.set("discipline", params.discipline);
+  if (params?.status) q.set("status", params.status);
+  if (params?.contractor) q.set("contractor", params.contractor);
+  if (params?.critical_only) q.set("critical_only", "true");
+  if (params?.search) q.set("search", params.search);
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.page_size) q.set("page_size", String(params.page_size));
+
+  const qs = q.toString();
+  return apiFetch<GanttDataResponse>(`/api/v1/schedule/gantt${qs ? `?${qs}` : ""}`);
+}
+
+export async function fetchUpdateCenterFeed(params?: {
+  source_type?: string;
+  severity?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<UpdateCenterFeedResponse> {
+  const q = new URLSearchParams();
+  if (params?.source_type) q.set("source_type", params.source_type);
+  if (params?.severity) q.set("severity", params.severity);
+  if (params?.page) q.set("page", String(params.page));
+  if (params?.page_size) q.set("page_size", String(params.page_size));
+
+  const qs = q.toString();
+  return apiFetch<UpdateCenterFeedResponse>(`/api/v1/updates/feed${qs ? `?${qs}` : ""}`);
+}
+
+export async function fetchDelayAnalyticsDetailed(params?: {
+  discipline?: string;
+  contractor?: string;
+  location?: string;
+  cause?: string;
+  start_date?: string;
+  end_date?: string;
+}): Promise<DelayAnalyticsResponse> {
+  const q = new URLSearchParams();
+  if (params?.discipline) q.set("discipline", params.discipline);
+  if (params?.contractor) q.set("contractor", params.contractor);
+  if (params?.location) q.set("location", params.location);
+  if (params?.cause) q.set("cause", params.cause);
+  if (params?.start_date) q.set("start_date", params.start_date);
+  if (params?.end_date) q.set("end_date", params.end_date);
+
+  const qs = q.toString();
+  return apiFetch<DelayAnalyticsResponse>(`/api/v1/analysis/delays${qs ? `?${qs}` : ""}`);
+}
+
+export async function parseSearchFilter(query: string): Promise<ParsedFilterResponse> {
+  return apiFetch<ParsedFilterResponse>("/api/v1/search/parse-filter", {
+    method: "POST",
+    body: JSON.stringify({ query }),
+  });
+}
+
+export async function fetchActivityDetailAggregate(activityId: string): Promise<ActivityDetailAggregate> {
+  return apiFetch<ActivityDetailAggregate>(`/api/v1/schedule/activities/${encodeURIComponent(activityId)}/detail`);
+}
+
+export async function acceptReviewItem(eventId: string, notes?: string): Promise<{ decision_id: string; decision: string }> {
+  return apiFetch(`/api/v1/review/${eventId}/accept`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function editReviewItem(eventId: string, correctedActivityId: string, notes?: string): Promise<{ decision_id: string; decision: string }> {
+  return apiFetch(`/api/v1/review/${eventId}/edit`, {
+    method: "POST",
+    body: JSON.stringify({
+      corrected_activity_id: correctedActivityId,
+      notes,
+    }),
+  });
+}
+
+export async function declineReviewItem(eventId: string, notes?: string): Promise<{ decision_id: string; decision: string }> {
+  return apiFetch(`/api/v1/review/${eventId}/decline`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function confirmNewActivity(
+  eventId: string,
+  payload: {
+    activity_name: string;
+    discipline: string;
+    wbs_code?: string;
+    planned_start?: string;
+    planned_finish?: string;
+    original_duration_days?: number;
+    notes?: string;
+  }
+): Promise<{ decision_id: string; new_activity_id: string }> {
+  return apiFetch(`/api/v1/review/${eventId}/confirm_new`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 

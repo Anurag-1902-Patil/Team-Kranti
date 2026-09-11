@@ -31,15 +31,19 @@ async def lifespan(app: FastAPI):
         env=settings.app_env,
         project=settings.project_id,
     )
-    # Pre-warm the sentence-transformers model so the first request isn't slow.
-    # Import here to avoid top-level load in worker processes that don't need it.
-    try:
-        from backend.services.matching.semantic_matcher import get_embedder
+    # Pre-warm the sentence-transformers model in a background thread so Uvicorn binds immediately.
+    import asyncio
 
-        get_embedder()
-        log.info("app.embedder_ready")
-    except Exception as exc:
-        log.warning("app.embedder_warmup_failed", error=str(exc))
+    def _warmup():
+        try:
+            from backend.services.matching.semantic_matcher import get_embedder
+
+            get_embedder()
+            log.info("app.embedder_ready")
+        except Exception as exc:
+            log.warning("app.embedder_warmup_failed", error=str(exc))
+
+    asyncio.get_event_loop().run_in_executor(None, _warmup)
 
     yield
 
@@ -68,7 +72,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Register routers ---
 from backend.api.v1 import (  # noqa: E402
     analysis,
     auth,
@@ -78,6 +81,7 @@ from backend.api.v1 import (  # noqa: E402
     review,
     schedule,
     search,
+    updates,
     webhook,
 )
 
@@ -92,6 +96,8 @@ app.include_router(memory.router, prefix="/api/v1/memory", tags=["Institutional 
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["Analysis"])
 app.include_router(entities.router, prefix="/api/v1/entities", tags=["Entities"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
+app.include_router(updates.router, prefix="/api/v1/updates", tags=["Updates"])
+app.include_router(updates.router, prefix="/api/v1/update-center", tags=["Updates"])
 
 
 @app.get("/health", tags=["Health"])

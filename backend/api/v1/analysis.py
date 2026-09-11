@@ -32,12 +32,33 @@ async def schedule_health_endpoint(
 
 @router.get("/delays")
 async def delay_analytics_endpoint(
+    discipline: str | None = Query(None),
+    contractor: str | None = Query(None),
+    location: str | None = Query(None),
+    cause: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: Any = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Get delay classification across 12 categories, recurring blockers, and bottleneck locations."""
+    """
+    Part C #3: Delay classification across 12 categories, recurring blockers,
+    bottleneck locations, trend over time, and major delay register with server-side filters.
+    """
+    from datetime import datetime
+    sd = datetime.fromisoformat(start_date) if start_date else None
+    ed = datetime.fromisoformat(end_date) if end_date else None
+
     def _run_sync(session):
-        return get_delay_analytics(session)
+        return get_delay_analytics(
+            session=session,
+            discipline=discipline,
+            contractor=contractor,
+            location=location,
+            cause=cause,
+            start_date=sd,
+            end_date=ed,
+        )
 
     return await db.run_sync(_run_sync)
 

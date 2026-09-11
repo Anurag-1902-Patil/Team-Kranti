@@ -2,6 +2,30 @@
 
 All meaningful code changes made by AI (Antigravity) are logged here.
 
+## 2026-09-11 — P6-Style Project Controls Interface & Part C Endpoints
+
+**Session summary**: Rebuilt the entire frontend into a dense, high-performance Primavera P6 project controls interface consuming real database actuals (51 activities, 153 events) with white/near-white palette (`#FFFFFF`, `#FAFAFA`, `#F4F4F5`) and restrained slate-blue accents. Delivered 7 core MVPs, 5 new backend APIs, and end-to-end automated test validation.
+
+### Part C Backend Endpoints
+- Implemented `GET /api/v1/schedule/gantt` in `backend/api/v1/schedule.py` returning nested WBS hierarchy, dependencies, dual baseline/actual dates, float, and critical-path flags.
+- Implemented `GET /api/v1/updates/feed` in `backend/api/v1/updates.py` generating a unified attention feed with stable IDs (`rev_*`, `dq_*`, `sched_*`, `doc_*`, `alias_*`) and verified no double-counting between review queue and update center.
+- Implemented `GET /api/v1/analysis/delays` with server-side filters (discipline, contractor, location, cause, date range), returning KPIs, monthly accumulation trends, 12 root cause categories, contractor delay ratios, and major delay register.
+- Implemented `POST /api/v1/search/parse-filter` in `backend/api/v1/search.py` providing grounded natural language to structured filter translation with route suggestions.
+- Implemented `GET /api/v1/schedule/activities/{activity_id}/detail` returning a unified 6-section payload (Identity, Schedule, Progress, Intelligence with Evidence Breadcrumb, Risk with Explainability Strip, and Audit).
+
+### Frontend P6 Architecture & 7 MVPs
+- **MVP 1: Project Overview (`app/page.tsx`)**: Planned vs Actual S-Curve (Recharts Line), Activity Status Donut, Discipline Progress Bars, Delay Watchlist, and `WhatChangedRibbon`.
+- **MVP 2: P6 Gantt & Schedule (`app/schedule/page.tsx`, `components/P6Gantt.tsx`)**: High-density SVG/HTML dual-bar timeline with expandable WBS hierarchy, 4-level zoom (day/week/month/quarter), SVG dependency arrows, critical-path highlighting, XER export, and XER import modal.
+- **MVP 3: Activity Detail Drawer (`components/ActivityDetailDrawer.tsx`)**: 6 tabs (Identity, Schedule, Progress history, Intelligence with 4-level Evidence Breadcrumb `Activity → Progress Event → Document → Original Message`, Risk with Prediction Explainability Strip, and Audit trail with planner re-editing).
+- **MVP 4: Review Queue (`app/review/page.tsx`)**: Keyboard-accelerated triage (`A`/`E`/`R`/`J`/`K`), confidence tiers, match re-assignment, confirm-new activity, and terminology proposals tab.
+- **MVP 5: Update Center (`app/updates/page.tsx`)**: Attention feed with category tabs, severity filter, and direct route linking.
+- **MVP 6: Delay Analysis (`app/analysis/delays/page.tsx`)**: Delay KPIs, accumulation trend, 12 standardized root causes, contractor delay rankings, bottleneck locations, and major delay register.
+- **MVP 7: Command Palette (`components/CommandPalette.tsx`)**: Spotlight `⌘K` search with parsed filter pills and direct jump links.
+
+### Verification & Testing
+- Automated backend tests: `tests/test_p6_frontend_endpoints.py` (5/5 passing) and `tests/test_intelligence_layer.py` (5/5 passing).
+- Production build: `npm run build` in `frontend/` passed with 0 TypeScript errors and static page generation.
+
 ---
 
 ## 2026-09-05 — Initial Full Build (Session 2)

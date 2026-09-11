@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { AppProvider } from "@/lib/AppContext";
+import { Header } from "@/components/Header";
+import { Sidebar } from "@/components/Sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ActivityDetailDrawer } from "@/components/ActivityDetailDrawer";
 
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -17,7 +22,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kranti P1 — Oil India Project Controls",
+  title: "Kranti P6 — Project Controls & Schedule Integration",
   description:
     "Intelligent Data Capture & Schedule-Linking Layer for Oil India Limited — Smart India Hackathon 2026 SIH26122.",
 };
@@ -25,19 +30,20 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
-        style={{
-          fontFamily: "var(--font-ibm-plex-sans), 'IBM Plex Sans', Arial, sans-serif",
-          background: "var(--bg)",
-          color: "var(--ink)",
-          margin: 0,
-          padding: 0,
-          height: "100vh",
-          overflow: "hidden",
-        }}
-      >
-        {children}
+      <body className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} antialiased bg-[#FAFAFA] text-slate-900`}>
+        <AppProvider>
+          <div className="flex flex-col h-screen overflow-hidden">
+            <Header />
+            <div className="flex flex-1 overflow-hidden">
+              <Sidebar />
+              <main className="flex-1 overflow-y-auto bg-[#FAFAFA]">
+                {children}
+              </main>
+            </div>
+            <CommandPalette />
+            <ActivityDetailDrawer />
+          </div>
+        </AppProvider>
       </body>
     </html>
   );
