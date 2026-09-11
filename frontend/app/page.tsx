@@ -190,9 +190,15 @@ export default function DashboardPage() {
     const pct = act.actual_percent_complete || act.percent_complete_plan || 0;
     const isCritical = act.is_critical || (act.total_float_days != null && act.total_float_days <= 0);
     return (
-      <div style={{ position: "absolute", left: l, width: w, top: 7, height: 9, borderRadius: 5,
+      <div 
+        onClick={() => {
+          setSelected(act);
+          if (layoutMode === "Kranti") setKrantiNav("Hierarchy");
+        }}
+        style={{ position: "absolute", left: l, width: w, top: 7, height: 9, borderRadius: 5,
         background: pct >= 100 ? "var(--success)" : isCritical ? "var(--danger)" : "var(--ink)",
-        overflow: "hidden" }} title={`${act.activity_name} — ${pct}%`}>
+        overflow: "hidden", cursor: "pointer", zIndex: 2 }} 
+        title={`[${act.activity_id}] ${act.activity_name} — ${pct}%`}>
         {pct > 0 && (
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(pct,100)}%`,
             background: "rgba(217,130,43,0.7)", borderRadius: 5 }} />
@@ -531,6 +537,8 @@ export default function DashboardPage() {
                         <tr>
                           <th style={{ width: 64, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>ID</th>
                           <th style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Name</th>
+                          <th style={{ width: 75, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Start</th>
+                          <th style={{ width: 75, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "left", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>End</th>
                           <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Orig</th>
                           <th style={{ width: 42, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>Rem</th>
                           <th style={{ width: 38, position: "sticky", top: 0, zIndex: 2, background: "var(--surface-alt)", borderBottom: "1px solid var(--border-strong)", padding: "8px 10px", textAlign: "right", fontWeight: 600, fontSize: 10.5, color: "var(--ink-soft)", textTransform: "uppercase", letterSpacing: ".4px" }}>%</th>
@@ -544,6 +552,8 @@ export default function DashboardPage() {
                             <tr key={act.id} onClick={() => { setSelected(act); setActiveTab("general"); }} style={{ cursor: "pointer", background: isSel ? "var(--accent-soft)" : undefined }}>
                               <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, fontFamily: "'IBM Plex Mono',monospace", fontSize: 11 }}>{act.activity_id}</td>
                               <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{act.activity_name}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, whiteSpace: "nowrap" }}>{act.actual_start ? act.actual_start.substring(0,10) : act.planned_start ? act.planned_start.substring(0,10) : "—"}</td>
+                              <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, whiteSpace: "nowrap" }}>{act.actual_finish ? act.actual_finish.substring(0,10) : act.planned_finish ? act.planned_finish.substring(0,10) : "—"}</td>
                               <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{act.original_duration_days ? `${act.original_duration_days}d` : "—"}</td>
                               <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{act.remaining_duration_days ? `${act.remaining_duration_days}d` : "—"}</td>
                               <td style={{ borderBottom: "1px solid var(--border)", padding: "5px 10px", height: ROW_H, textAlign: "right" }}>{pct}%</td>
